@@ -9,7 +9,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from lib import asset, metric_row, page_config, processed, report
+from lib import asset, gradient_row, page_config, processed, report
 
 page_config("Home")
 
@@ -31,8 +31,7 @@ top ten, which over ten years happens repeatedly.
 # --- Headline numbers -------------------------------------------------------
 
 dataset = processed("dataset.parquet")
-concentration = processed("concentration.parquet")
-ablation = report("ablation_summary.parquet")
+drift = report("explanatory_drift.parquet")
 
 rows = f"{len(dataset):,}" if dataset is not None else "—"
 
@@ -41,22 +40,21 @@ if dataset is not None and "date" in dataset:
     dates = pd.to_datetime(dataset["date"])
     span = f"{dates.min():%b %Y} – {dates.max():%b %Y}"
 
-drift = report("explanatory_drift.parquet")
-
-explanatory_r2 = "—"
-ratio_drift = "—"
+explanatory_r2 = ratio_drift = "—"
+growth_note = "run the experiments to populate"
 if drift is not None and not drift.empty:
-    explanatory_r2 = f"{drift.iloc[0]['r2_mean']:.3f}"
-    ratio_drift = f"{drift.iloc[0]['ratio_drift_multiple']:.2f}×"
+    row = drift.iloc[0]
+    explanatory_r2 = f"{row['r2_mean']:.3f}"
+    ratio_drift = f"{row['ratio_drift_multiple']:.2f}×"
+    growth_note = (f"block {row['block_growth']:.1f}× vs "
+                   f"index {row['index_growth']:.1f}×")
 
-metric_row(
+gradient_row(
     [
-        ("Modelling rows", rows, "Trading days with a complete feature vector"),
-        ("Study window", span, None),
-        ("Within-year R²", explanatory_r2,
-         "Index level regressed on the ten market caps, inside each year"),
-        ("Relationship drift", ratio_drift,
-         "How far index ÷ top-ten market cap moved across the decade"),
+        ("Trading days", rows, "complete feature vectors"),
+        ("Study window", span, "ten full years"),
+        ("Within-year R²", explanatory_r2, "index on ten market caps"),
+        ("Relationship drift", ratio_drift, growth_note),
     ]
 )
 

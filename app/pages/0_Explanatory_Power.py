@@ -7,7 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from lib import metric_row, page_config, report, require
+from lib import gradient_row, page_config, report, require
 
 page_config("Explanatory power")
 
@@ -39,15 +39,16 @@ rolling = report("explanatory_rolling.parquet")
 
 if drift is not None and not drift.empty:
     row = drift.iloc[0]
-    metric_row(
+    gradient_row(
         [
             ("Mean within-year R²", f"{row['r2_mean']:.3f}",
-             "Index level regressed on the ten market caps, inside each year"),
-            ("Mean within-year MAPE", f"{row['mape_mean']:.2f}%", None),
+             f"lowest year {row['r2_min']:.3f}"),
+            ("Mean within-year MAPE", f"{row['mape_mean']:.2f}%",
+             "on the index level"),
             ("Ratio drift", f"{row['ratio_drift_multiple']:.2f}×",
-             "How far index ÷ block moved from the first year to the last"),
+             f"{row['ratio_first']:.2f} → {row['ratio_last']:.2f}"),
             ("Block vs index growth", f"{row['relative_growth']:.2f}×",
-             "The top ten grew this much faster than the index itself"),
+             "the top ten outgrew the index"),
         ]
     )
 
