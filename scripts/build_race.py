@@ -175,7 +175,7 @@ def main() -> int:
     names: dict[str, str] = {}
     try:
         universe = load_table(PROCESSED_DIR / "universe.parquet")
-        names = dict(zip(universe["ticker"], universe["ticker"]))
+        names = dict(zip(universe["ticker"], universe["name"]))
     except FileNotFoundError:
         log.warning("universe table not found; bars will be labelled by ticker")
 
