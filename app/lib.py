@@ -40,7 +40,8 @@ LINE_2 = "rgba(255, 255, 255, 0.13)"
 
 TEXT = "#EDF0F7"
 MUTED = "#9BA4BE"
-FAINT = "#667089"
+NOTE = "#7E8AA6"        # dimmest text that still clears 4.5:1 on the panels
+FAINT = "#667089"       # non-text use only: rules, disabled marks
 
 PURPLE = "#7C5CFC"
 BLUE = "#3B82F6"
@@ -49,12 +50,15 @@ CYAN = "#06B6D4"
 
 ACCENT = PURPLE
 
-# Card gradients, in the order they should be used.
+# Accent ramps for the headline cards. These colour a 2px rule and a faint
+# corner glow only -- never the card surface. Filling four cards with four
+# saturated gradients makes the numbers harder to read and the page look like a
+# template rather than a study.
 GRADIENTS = [
-    ("#F472B6", "#A855F7"),   # pink -> violet
-    ("#7C5CFC", "#4C1D95"),   # violet -> deep purple
-    ("#3B82F6", "#22D3EE"),   # blue -> cyan
-    ("#06D6A0", "#0EA5E9"),   # teal -> blue
+    ("#A78BFA", "#7C5CFC"),   # violet
+    ("#60A5FA", "#3B82F6"),   # blue
+    ("#22D3EE", "#06B6D4"),   # cyan
+    ("#F472B6", "#EC4899"),   # pink
 ]
 
 # Categorical colours for series, tuned to read on the dark background.
@@ -109,6 +113,7 @@ _TOKENS = f"""
   --line-2: {LINE_2};
   --text: {TEXT};
   --muted: {MUTED};
+  --note: {NOTE};
   --faint: {FAINT};
   --purple: {PURPLE};
   --blue: {BLUE};
@@ -238,7 +243,7 @@ _CSS_BODY = """
   box-shadow: 0 30px 56px -24px rgba(0, 0, 0, 0.92), 0 0 42px -22px rgba(124, 92, 252, 0.8);
 }
 [data-testid="stMetricLabel"] p {
-  color: var(--faint) !important;
+  color: var(--muted) !important;
   font-size: 0.8rem !important;
   font-weight: 700;
   text-transform: uppercase;
@@ -255,47 +260,70 @@ _CSS_BODY = """
 .grad-card {
   position: relative;
   overflow: hidden;
-  border-radius: 20px;
-  padding: 20px 22px;
-  min-height: 138px;
-  color: #fff;
+  border-radius: 18px;
+  padding: 19px 21px 17px;
+  min-height: 132px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  box-shadow: 0 20px 44px -20px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  transition: transform 0.35s var(--ease), box-shadow 0.35s var(--ease);
+  background: linear-gradient(158deg, rgba(255, 255, 255, 0.062) 0%, rgba(255, 255, 255, 0.02) 100%);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 40px -24px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: transform 0.32s var(--ease), box-shadow 0.32s var(--ease), border-color 0.32s var(--ease);
 }
+
+/* The only place the accent hue appears at full strength. */
+.grad-card::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--c1), var(--c2));
+}
+
+/* A wash of the same hue, kept low enough that white text stays legible. */
 .grad-card::after {
   content: "";
   position: absolute;
-  inset: 0;
-  background: radial-gradient(120% 88% at 86% 6%, rgba(255, 255, 255, 0.26) 0%, transparent 56%);
+  top: -45%; right: -22%;
+  width: 72%; height: 130%;
+  background: radial-gradient(circle, var(--c1) 0%, transparent 68%);
+  opacity: 0.11;
   pointer-events: none;
 }
+
 .grad-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 34px 62px -22px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.36);
+  transform: translateY(-4px);
+  border-color: rgba(148, 122, 255, 0.3);
+  box-shadow: 0 30px 58px -26px rgba(0, 0, 0, 0.92), 0 0 40px -24px var(--c1);
 }
+.grad-card:hover::after { opacity: 0.17; }
+
+/* --faint is too dark for 11-13px text on this surface (about 3.4:1). The
+   label and note step down through --muted and --note instead, both of which
+   clear 4.5:1, and the hierarchy is carried by size and weight. */
 .grad-card .gc-label {
   position: relative; z-index: 1;
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  opacity: 0.9;
+  letter-spacing: 0.11em;
+  color: var(--muted);
 }
 .grad-card .gc-value {
   position: relative; z-index: 1;
-  font-size: 2.1rem;
+  font-size: 2rem;
   font-weight: 800;
-  line-height: 1.08;
+  line-height: 1.1;
   letter-spacing: -0.028em;
-  margin: 8px 0 3px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  margin: 10px 0 4px;
 }
 .grad-card .gc-note {
   position: relative; z-index: 1;
-  font-size: 0.8rem;
-  opacity: 0.92;
+  font-size: 0.78rem;
+  color: var(--note);
 }
 
 /* --- Charts, tables, callouts -------------------------------------------- */
@@ -453,14 +481,18 @@ def metric_row(items: list[tuple[str, str, str | None]]) -> None:
 
 
 def gradient_row(items: list[tuple[str, str, str]]) -> None:
-    """Render headline figures as gradient cards from (label, value, note)."""
+    """Render headline figures as accent-topped cards from (label, value, note).
+
+    The accent hue is handed to the CSS as custom properties rather than being
+    painted onto the card, so the surface stays consistent with every other
+    panel and the figure itself carries the emphasis.
+    """
     columns = st.columns(len(items))
     for i, (column, (label, value, note)) in enumerate(zip(columns, items)):
         start, end = GRADIENTS[i % len(GRADIENTS)]
         column.markdown(
             f"""
-            <div class="grad-card"
-                 style="background: linear-gradient(140deg, {start} 0%, {end} 100%);">
+            <div class="grad-card" style="--c1: {start}; --c2: {end};">
               <div class="gc-label">{label}</div>
               <div>
                 <div class="gc-value">{value}</div>

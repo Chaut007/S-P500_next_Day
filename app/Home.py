@@ -35,10 +35,14 @@ drift = report("explanatory_drift.parquet")
 
 rows = f"{len(dataset):,}" if dataset is not None else "—"
 
+# The figure is the headline and the range is the supporting detail, not the
+# other way round: a date range set at headline size wraps and unbalances the row.
 span = "—"
+span_note = "run the pipeline to populate"
 if dataset is not None and "date" in dataset:
     dates = pd.to_datetime(dataset["date"])
-    span = f"{dates.min():%b %Y} – {dates.max():%b %Y}"
+    span = f"{round((dates.max() - dates.min()).days / 365.25)} years"
+    span_note = f"{dates.min():%b %Y} – {dates.max():%b %Y}"
 
 explanatory_r2 = ratio_drift = "—"
 growth_note = "run the experiments to populate"
@@ -52,7 +56,7 @@ if drift is not None and not drift.empty:
 gradient_row(
     [
         ("Trading days", rows, "complete feature vectors"),
-        ("Study window", span, "ten full years"),
+        ("Study window", span, span_note),
         ("Within-year R²", explanatory_r2, "index on ten market caps"),
         ("Relationship drift", ratio_drift, growth_note),
     ]
