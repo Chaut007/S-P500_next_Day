@@ -61,9 +61,9 @@ gradient_row(
 st.success(
     "**The top ten explain the index, but the relationship does not hold "
     "still.** Within any single year they account for well over 90% of the "
-    "index level. Across the decade the index-to-block ratio falls by roughly "
-    "a factor of two and a half, which is what defeats every out-of-sample "
-    "forecast here. See **Explanatory Power** for the evidence.",
+    "index level. Across the decade the index-to-block ratio falls by a factor "
+    "of about 2.2, so the coefficients fitted on early years are already wrong "
+    "for later ones. See **Explanatory Power** for the evidence.",
     icon="✅",
 )
 

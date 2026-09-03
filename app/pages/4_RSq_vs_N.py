@@ -83,15 +83,18 @@ st.markdown(
 The expected shape was a knee: a large gain from five to ten, a small one from
 ten to twenty, justifying a stop at ten. **That is not what the data shows.**
 
-Accuracy improves as N grows, and the standard deviation across folds is larger
-than the differences between values of N. Which year is being predicted matters
-more than how many constituents are used.
+The curve is not even monotonic. Twenty constituents score best on every metric
+and ten score **worst** — worse than five — but the standard deviation across
+folds (1.7 to 1.9 in R²) is more than double the entire spread between values of
+N (0.84). None of these differences is distinguishable from fold-to-fold noise.
+Which year is being predicted matters far more than how many constituents are
+used.
 
-That result is consistent with the drift on the Explanatory Power page: a wider
-block captures more of the index, so less of the movement is left to the
-constituents outside it, and the coefficient has less distance to travel. On
-this evidence, ten is a reasonable reporting choice but not an optimum the data
-picks out on its own.
+Widening the block ought to help, for the reason set out on the Explanatory
+Power page: a wider block captures more of the index, so the coefficient has
+less distance to travel. The N = 20 column is consistent with that, but with
+error bars this size the sweep cannot establish it. On this evidence, ten is a
+reasonable reporting choice, not an optimum the data picks out on its own.
 """
 )
 

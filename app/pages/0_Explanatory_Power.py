@@ -62,8 +62,9 @@ st.success(
 st.warning(
     "**But it does not hold still.** The index-to-block ratio falls steadily "
     "across the decade, so coefficients fitted on early years are simply wrong "
-    "for later ones. That drift, not noise, is what breaks every out-of-sample "
-    "forecast in this study.",
+    "for later ones. That drift is one of the two things breaking the "
+    "out-of-sample forecasts here; the other is the tree models' inability to "
+    "predict above their training range, on **Model Comparison**.",
     icon="⚠️",
 )
 
@@ -121,14 +122,21 @@ st.plotly_chart(fig, use_container_width=True)
 
 st.markdown(
     """
-Read this as the coefficient a model has to learn. It falls by roughly a factor
-of two and a half across the window, and it falls **monotonically** — this is a
-trend, not noise a longer sample would average away.
+Read this as the coefficient a model has to learn. It falls by a factor of about
+2.2 across the window, and it falls in nine of the ten year-on-year steps — the
+single exception is 2021 to 2022, where the bear market lifted it briefly. This
+is a trend, not noise a longer sample would average away.
 
-A model fitted on the early years therefore expects far more index per unit of
-top-ten market cap than the later years deliver, and over-predicts. That is
-exactly the error direction observed on every expanding-window fold apart from
-2022.
+A model fitted on the early years therefore expects more index per unit of
+top-ten market cap than the later years deliver, and over-predicts. That is the
+dominant error wherever the index stays inside the range the model was trained
+on: 2023 lies entirely inside that range and is over-predicted by an average of
+325 points, and 2020 by 331.
+
+It is not the only failure mode, though. On the folds where the index runs far
+above anything seen in training — 2021, 2024 and 2025 — the tree models cannot
+follow it upward and the net error flips to under-prediction, reaching −697
+points in 2024. See **Model Comparison** for that half of the story.
 """
 )
 

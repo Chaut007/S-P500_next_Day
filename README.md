@@ -160,13 +160,16 @@ cannot produce:
 | 2020 | 53% |
 | 2021 | 98% |
 | **2022** | **0%** |
-| 2023 | 0% |
+| **2023** | **0%** |
 | 2024 | 96% |
 | 2025 | 56% |
 
-2022 is the control: the one bear market in the window, and the only year where
-the target stays inside the range already seen. Model quality tracks this column
-more closely than it tracks anything about the features.
+2022 and 2023 are the controls: the two years where the target stays inside the
+range already seen. Model quality tracks this column more closely than it tracks
+anything about the features — but not perfectly, and the imperfection is
+informative. 2022 is the best fold in the study; 2023 is one of the worst. The
+ceiling is one of two failure modes, not the whole story; the other is the
+coefficient drift documented below.
 
 This is why `LR` is pinned into `model.included_model_types` and why
 `scripts/run_train.py` scores **every model individually on the validation
@@ -200,28 +203,50 @@ Regressing the index level on the ten market caps **inside each year**:
 | 2024 | 0.967 | 0.99% | 0.293 |
 | 2025 | 0.978 | 0.84% | 0.267 |
 
-Never below 0.92. The answer to the research question is yes.
+Never below 0.91. The answer to the research question is yes.
 
 ### But the relationship drifts
 
-The last column is the coefficient a model has to learn, and it falls
-**monotonically by a factor of 2.2** across the decade. The top-ten block grew
-6.65× while the index grew 2.97× — the block outgrew the index 2.24 times over.
+The last column is the coefficient a model has to learn, and it falls **by a
+factor of 2.2** across the decade — in nine of the ten year-on-year steps, the
+exception being 2021 to 2022, when the bear market lifted it briefly. The
+top-ten block grew 6.65× while the index grew 2.97×; the block outgrew the index
+2.24 times over.
 
 Consequence: any model fitted on earlier years expects more index per unit of
-top-ten market cap than later years deliver, and **over-predicts**. Mean error on
-the expanding folds runs +424, +380, +318, +513 points. The single exception is
-2022, the only validation year whose values stay inside the range already seen,
-where R² reaches 0.74–0.78 while every other fold is negative.
+top-ten market cap than later years deliver, and **over-predicts**. That is the
+dominant error wherever the ceiling is not active — 2023 lies entirely inside
+the training range and is over-predicted by +249 to +325 points depending on the
+feature set, and 2020 by +224 to +331.
+
+Where the index instead runs far above the training range, the extrapolation
+ceiling pulls the other way and wins: 2021, 2024 and 2025 come out net
+**under**-predicted, by as much as −697 points in 2024. Mean signed error
+(predicted − actual) by validation year:
+
+| Set | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 |
+|---|---|---|---|---|---|---|
+| A | +331 | −365 | −41 | +325 | −697 | −110 |
+| B | +316 | −322 | −24 | +249 | −677 | −108 |
+| C | +224 | −311 | +30 | +250 | −631 | −69 |
+
+The two mechanisms are what make the sign flip across folds. R² is positive on
+2022 and 2025 for every feature set (0.74–0.80) and on 2020 for set C alone; it
+is negative on 2021, 2023 and 2024 throughout.
 
 ### Two hypotheses that turned out wrong
 
 Both were in the original design and both were falsified by the run:
 
 1. **"A linear model will extrapolate, since the index is a weighted sum."**
-   `LinearModel` scored MAE 782 — worse than every tree. One fixed slope cannot
-   span a 2.2× drift; the trees at least clamp to their training range, which
-   bounds the error instead of projecting the wrong slope indefinitely.
+   `LinearModel` scored mean MAE 782, second from last — behind `RandomForest`
+   (678), `LightGBM` (685) and `XGBoost` (714), ahead of only `CatBoost` (794).
+   It does escape the ceiling: its highest prediction *overshoots* the year's
+   actual high in every fold, where every tree model undershoots in every fold.
+   Escaping the ceiling only trades undershooting for overshooting. One fixed
+   slope cannot span a 2.2× drift, while the trees at least clamp to their
+   training range, which bounds the error instead of projecting a wrong slope
+   indefinitely.
 2. **"Normalising the target by the block total will fix the range problem."**
    It made things far worse (skill 60+). Dividing the features by `S(t)` turns
    them into within-block weights that sum to one, destroying the level
@@ -238,9 +263,12 @@ asserted them and the data did not agree.
 | 10 | −0.931 | 1.71 | 343.6 | 10.58 |
 | 20 | **−0.095** | 1.82 | **241.4** | **7.35** |
 
-No knee. Accuracy improves with N, and the spread across folds is larger than
-the gap between values of N — the validation year matters more than the count.
-Ten is defensible as a reporting choice, not as an optimum the data selects.
+No knee, and not even monotonic: N = 20 is best on every metric while N = 10 is
+the worst, behind N = 5. The spread across folds (SD 1.7–1.9 in R²) is more than
+double the entire gap between values of N (0.84), so none of these differences is
+distinguishable from fold-to-fold noise — the validation year matters far more
+than the count. Ten is defensible as a reporting choice, not as an optimum the
+data selects.
 
 ### Weight against importance
 
@@ -254,8 +282,9 @@ carries essentially no information about how much the model relies on its slot.
 
 ### Forecasting
 
-Every configuration loses to the naive forecast, by factors of roughly 6 to 10.
-This is unfavourable by construction: the naive rule is handed today's index
+Every configuration loses to the naive forecast, by factors ranging from 2.1
+(set B on 2022) to 21.7 (set A on 2024). This is unfavourable by construction:
+the naive rule is handed today's index
 level, which the design deliberately withholds from the model. The result says
 the top ten do not pin down the index level as precisely as yesterday's index
 does — which was never in doubt — and should not be read as evidence that the

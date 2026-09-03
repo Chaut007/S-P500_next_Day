@@ -73,9 +73,10 @@ st.plotly_chart(fig, use_container_width=True)
 
 st.caption(
     "Bars below the dashed line beat doing nothing. Folds validating years that "
-    "set new index highs are where tree models hit their ceiling — 2022, the "
-    "one bear market in the window, is the fold where the target stays inside "
-    "the range already seen in training."
+    "set new index highs are where tree models hit their ceiling. Two folds stay "
+    "inside the range already seen in training — 2022, the one bear market in "
+    "the window, and 2023 — and only 2022 scores well. The ceiling is therefore "
+    "not the whole explanation; see **Model Comparison**."
 )
 
 st.divider()

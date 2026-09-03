@@ -27,13 +27,13 @@ AutoGluon uses to choose its ensemble.
 )
 
 st.error(
-    "**The assumption was wrong.** `LinearModel` finishes second from last, "
-    "worse than every tree. A single fitted slope cannot span a relationship "
-    "that drifts by a factor of 2.2 across the decade (see **Explanatory "
-    "Power**), so the linear model projects the wrong slope indefinitely while "
-    "the trees at least clamp to their training range — which bounds the error "
-    "rather than compounding it. The ceiling is real; escaping it is not "
-    "sufficient.",
+    "**The assumption was wrong.** `LinearModel` finishes second from last on "
+    "mean MAE, ahead of only `CatBoost` and behind the other three tree models. "
+    "A single fitted slope cannot span a relationship that drifts by a factor "
+    "of 2.2 across the decade (see **Explanatory Power**), so the linear model "
+    "projects the wrong slope indefinitely while the trees at least clamp to "
+    "their training range — which bounds the error rather than compounding it. "
+    "The ceiling is real; escaping it is not sufficient.",
     icon="✖️",
 )
 
@@ -104,7 +104,10 @@ st.plotly_chart(fig, use_container_width=True)
 
 st.caption(
     "A tall positive bar means the model never got near the year's actual high. "
-    "Bars close to zero mean the model tracked the index into new territory."
+    "Bars close to zero mean the model tracked the index into new territory. "
+    "Every tree model is positive in every year — the ceiling is universal — "
+    "while `LinearModel` is negative in every year: it escapes the ceiling by "
+    "overshooting the high instead, which is not the same as being right."
 )
 
 st.divider()
@@ -135,11 +138,18 @@ st.plotly_chart(fig, use_container_width=True)
 
 st.markdown(
     """
-**2022 is the control.** It is the only validation year where the index stayed
-inside the range the models had already seen, and every model looks respectable
-there. Everywhere else the ranking is set by how a model fails once it leaves
-that range — by flattening against a ceiling, or by extrapolating a slope that
-the drift has already invalidated.
+**Two folds are the control: 2022 and 2023.** They are the only validation years
+where the index stayed inside the range the models had already seen, so the
+ceiling is idle in both — and they split. 2022 is the best fold in the study.
+2023 is not, and the ranking inside it inverts: the three tree models take the
+top three places on MAE and `LinearModel` comes last. With no new highs to reach
+for, the only thing left to punish is the drifted slope, and the linear model is
+the one that commits to a slope.
+
+Everywhere else the index leaves that range and the other failure mode takes
+over: the trees flatten against their ceiling while the linear model overshoots
+it. That 2023 is an in-range year and still a bad one is the reason the ceiling
+cannot carry the whole explanation on its own.
 
 The ensemble wins overall because blending the two failure modes is less bad
 than committing to either.
