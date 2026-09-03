@@ -10,22 +10,35 @@ variables; the target is the index close on the **following** trading day.
 
 ## Setup
 
-> The `python` on this machine's PATH is a Microsoft Store stub that cannot run.
-> The virtual environment must be created with the real interpreter, once.
+Python 3.12 is required. AutoGluon does not yet publish wheels for 3.13+.
 
-```powershell
-& "C:\Users\jojoj\AppData\Roaming\uv\python\cpython-3.12-windows-x86_64-none\python.exe" -m venv .venv
-.\.venv\Scripts\Activate.ps1
+```bash
+python -m venv .venv
+source .venv/bin/activate        # Windows: .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-The environment is already built and populated. Activating it is enough.
+Or with [uv](https://github.com/astral-sh/uv):
 
-If PowerShell blocks the activation script:
+```bash
+uv venv --python 3.12
+uv pip install -r requirements.txt
+```
+
+<details>
+<summary>Windows notes</summary>
+
+If `python` resolves to the Microsoft Store stub, `python -m venv` fails with a
+prompt to install from the Store. Create the environment with a real interpreter
+instead — `uv venv --python 3.12` is the least painful route.
+
+If PowerShell refuses to run the activation script:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
+
+</details>
 
 ---
 
