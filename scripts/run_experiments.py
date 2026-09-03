@@ -1,13 +1,16 @@
-"""Phase 5 -- the two supporting research questions.
+"""Phase 5 -- the supporting research questions.
 
-1. How many stocks are enough? Sweep N over features.top_n_sweep and plot the
-   R-squared curve to find where extra constituents stop paying for themselves.
+1. How much of the index do the top ten account for within a period, and how
+   far does that relationship drift across the decade?
 2. Does index weight predict learned importance? Compare market-cap weight
    against permutation importance with Spearman rank correlation.
 
+The N = 5/10/20 sweep that used to live here was dropped when the study fixed
+N at ten; the head-to-head model comparison is in scripts/run_models.py.
+
 Run from the project root:
     python -m scripts.run_experiments
-    python -m scripts.run_experiments --skip-sweep
+    python -m scripts.run_experiments --skip-importance
 """
 
 from __future__ import annotations
@@ -32,15 +35,9 @@ from src.utils import save_table
 
 log = get_logger("run_experiments")
 
-# The N sweep answers "why ten?", so it uses the plain market-cap block only.
-# Adding trend or macro columns would blur what the extra constituents buy.
-SWEEP_SET = "A"
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the supporting experiments")
-    parser.add_argument("--skip-sweep", action="store_true",
-                        help="skip the N = 5/10/20 comparison")
     parser.add_argument("--skip-importance", action="store_true",
                         help="skip the weight vs importance analysis")
     parser.add_argument("--skip-explanatory", action="store_true",
@@ -76,50 +73,6 @@ def run_explanatory_analysis(cfg: dict, force_download: bool):
              .to_string(index=False))
 
     return periods, rolling, pd.DataFrame([stats]) if stats else pd.DataFrame()
-
-
-def run_top_n_sweep(cfg: dict, force_download: bool) -> pd.DataFrame:
-    """Train feature set A at each N and record accuracy per fold."""
-    rows: list[dict] = []
-
-    for top_n in cfg["features"]["top_n_sweep"]:
-        log.info("### Top-N sweep: N = %d ###", top_n)
-        dataset = build_dataset(top_n=top_n, force_download=force_download, cfg=cfg)
-
-        feature_cols = select_feature_set(
-            dataset.table, SWEEP_SET, top_n, dataset.trend_cols, dataset.macro_cols, cfg
-        )
-        X, y, dates, baseline = finalise(dataset.table, feature_cols)
-        folds = expanding_year_folds(dates, cfg)
-
-        from src.models.evaluate import evaluate_with_baseline
-        from src.models.split import iter_folds
-
-        for fold, X_train, y_train, X_valid, y_valid in iter_folds(X, y, folds):
-            _, preds = train_fold(
-                X_train, y_train, X_valid, fold.name, f"N{top_n}", cfg
-            )
-            metrics = evaluate_with_baseline(
-                y_valid.to_numpy(dtype="float64"),
-                preds,
-                baseline.iloc[fold.valid_idx].to_numpy(dtype="float64"),
-            )
-            metrics.update({"top_n": top_n, "fold": fold.name, "year": fold.year})
-            rows.append(metrics)
-            log.info("N=%d %s -> r2=%.5f mae=%.2f skill=%.3f",
-                     top_n, fold.name, metrics["r2"], metrics["mae"],
-                     metrics["skill_mae"])
-
-    results = pd.DataFrame(rows)
-    curve = (
-        results.groupby("top_n")[["r2", "mae", "mape", "mspe", "skill_mae"]]
-        .agg(["mean", "std"])
-        .reset_index()
-    )
-    curve.columns = ["_".join(c).strip("_") for c in curve.columns]
-
-    log.info("R-squared vs N:\n%s", curve.to_string(index=False))
-    return results, curve
 
 
 def run_importance_analysis(cfg: dict, force_download: bool) -> pd.DataFrame:
@@ -163,11 +116,6 @@ def main() -> int:
     args = parse_args()
     cfg = load_config()
     ensure_dirs()
-
-    if not args.skip_sweep:
-        results, curve = run_top_n_sweep(cfg, args.force_download)
-        save_table(results, REPORTS_DIR / "rsq_vs_n_folds.parquet")
-        save_table(curve, REPORTS_DIR / "rsq_vs_n.parquet")
 
     if not args.skip_explanatory:
         periods, rolling, drift = run_explanatory_analysis(cfg, args.force_download)

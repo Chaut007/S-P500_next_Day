@@ -50,7 +50,8 @@ Always run from the project root; the modules import as `src.*`.
 python -m scripts.run_data          # download, rank, assemble the dataset
 python -m scripts.build_race        # render the home-page animation
 python -m scripts.run_train         # expanding-window ablation A / B / C
-python -m scripts.run_experiments   # N sweep and weight vs importance
+python -m scripts.run_experiments   # explanatory power and weight vs importance
+python -m scripts.run_models        # four models on the 80/20 split + SHAP
 pytest -q                           # leakage and alignment tests
 
 streamlit run app/Home.py           # dashboard
@@ -113,9 +114,17 @@ enters as a return, because its price roughly doubled over the window and a
 second trending series would manufacture correlation with an index that also
 trended up.
 
-### Validation
+### Splitting
 
-Expanding window, one fold per validation year:
+Two splits, for two different jobs.
+
+**Chronological 80/20** is the headline. The leading 80% of trading days trains,
+the trailing 20% tests, and nothing about the test block reaches the models —
+not the scalers, not AutoGluon's tuning split, not the LSTM's early stopping.
+This is the split the four-model comparison runs on.
+
+**Expanding window** is used only to choose the feature set, one fold per
+validation year:
 
 | Fold | Train | Validate |
 |---|---|---|
@@ -255,20 +264,53 @@ Both were in the original design and both were falsified by the run:
 Both are recorded here rather than quietly removed, because the design document
 asserted them and the data did not agree.
 
-### How many constituents?
+### Four model families on a chronological 80/20 split
 
-| N | Mean R² | SD | Mean MAE | Skill |
-|---|---|---|---|---|
-| 5 | −0.652 | 1.94 | 327.6 | 9.67 |
-| 10 | −0.931 | 1.71 | 343.6 | 10.58 |
-| 20 | **−0.095** | 1.82 | **241.4** | **7.35** |
+Feature set C at N = 10. Train is the leading 1,994 trading days
+(Feb 2016 – Jan 2024); test is the trailing 499 (Jan 2024 – Dec 2025). No model
+sees a test row while fitting, scaling or early stopping.
 
-No knee, and not even monotonic: N = 20 is best on every metric while N = 10 is
-the worst, behind N = 5. The spread across folds (SD 1.7–1.9 in R²) is more than
-double the entire gap between values of N (0.84), so none of these differences is
-distinguishable from fold-to-fold noise — the validation year matters far more
-than the count. Ten is defensible as a reporting choice, not as an optimum the
-data selects.
+| Model | Test MAE | R² | Skill | Highest prediction | Shortfall |
+|---|---|---|---|---|---|
+| AutoGluon | **940.8** | −2.37 | 24.6 | 5,133 | **1,799** |
+| LSTM | 978.3 | −2.70 | 25.6 | 4,971 | 1,961 |
+| XGBoost | 1,147.2 | −4.03 | 30.1 | 4,760 | 2,172 |
+| SVR | 2,181.9 | −15.92 | 57.2 | 4,686 | 2,246 |
+
+The training block tops out at **4,796.6** and the test block reaches
+**6,932.0**, so **98.2%** of the test rows sit above anything the models were
+fitted on. That single number explains the whole table: the MAE ranking is
+exactly the ranking of how far each model can reach past its training maximum.
+
+- **SVR** (4,686) and **XGBoost** (4,760) never even reach the training maximum.
+  A tree averages the training targets in a leaf; an RBF kernel decays toward
+  its bias term as inputs leave the support vectors. Both are capped by
+  construction.
+- **LSTM** (4,971) and **AutoGluon** (5,133) clear it. The LSTM does so because
+  its target is standardised rather than min-max scaled — a `[0, 1]` target
+  would have capped the output layer at the training maximum and made 98% of
+  the test set unreachable by arithmetic rather than by modelling. AutoGluon
+  does so through the linear member of its ensemble.
+
+None of them is remotely useful: the best still loses to the naive forecast by
+**24.6×**. The comparison measures the extrapolation ceiling, not fit quality.
+
+### Feature importance
+
+TreeSHAP on XGBoost ranks the middle slots above the largest: `x9` (mean |SHAP|
+457.7), `x4` (261.2), `x10` (190.5), `x5` (166.1). `x1` does not reach the top
+eight. This is the same conclusion the Spearman analysis reaches from the other
+direction — a constituent's size says little about how much the model leans on
+its slot.
+
+Permutation importance, run across all four models, is **uninformative here and
+that is itself the result**. The largest effect any single feature has on any
+model is 4.0% of its baseline error, and for AutoGluon the top feature moves MAE
+by 0.33 points out of 940.85. Shuffling a column cannot matter much when the
+error is made almost entirely of the gap between where a model can reach and
+where the index actually went. SVR shows the only visible response, because
+decaying toward the training mean makes it more input-sensitive than models that
+simply flatten.
 
 ### Weight against importance
 
@@ -314,8 +356,10 @@ src/
   features/trend.py      momentum and concentration features
   features/macro.py      rate and gold controls
   features/build_features.py  assembly, target, ablation sets
-  models/split.py        expanding-window folds
+  models/split.py        expanding-window folds and the 80/20 split
   models/train.py        AutoGluon, per-model scoring
+  models/zoo.py          AutoGluon / XGBoost / SVR / LSTM behind one interface
+  models/explain.py      permutation importance and TreeSHAP
   models/evaluate.py     MAE / MSE / MAPE / MSPE / R² plus baseline
   models/importance.py   weight vs permutation importance
 
@@ -333,11 +377,14 @@ Change `config/config.yaml` only.
 | To change | Edit |
 |---|---|
 | Number of constituents | `features.top_n` |
-| N sweep values | `features.top_n_sweep` |
+| Feature set for the model comparison | `features.best_set` |
 | Study window | `data.start_date`, `data.end_date` |
 | Prediction horizon | `target.horizon` |
-| Validation years | `split.validation_years` |
-| Model pool / time budget | `model.included_model_types`, `model.time_limit` |
+| Train/test proportion | `split.test_ratio` |
+| Validation years (ablation) | `split.validation_years` |
+| AutoGluon pool / time budget | `model.included_model_types`, `model.time_limit` |
+| SVR / XGBoost / LSTM settings | `zoo.svr`, `zoo.xgboost`, `zoo.lstm` |
+| SHAP sample sizes | `explain.shap_sample`, `explain.shap_background` |
 | Animation smoothness | `dashboard.race_freq`, `race_fps` |
 
 ---

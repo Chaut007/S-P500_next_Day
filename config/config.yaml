@@ -26,7 +26,11 @@ target:
 
 features:
   top_n: 10
-  top_n_sweep: [5, 10, 20]
+
+  # The headline comparison runs on one feature set. C wins the ablation on
+  # every metric (MAE 295.5 vs 319.4 and 343.6), so it is the set the four
+  # models are compared on.
+  best_set: "C"
 
   trend:
     momentum_windows: [5, 20]
@@ -39,7 +43,11 @@ features:
     C: ["mcap", "trend", "macro"]
 
 split:
-  # Expanding window: train on everything before the validation year.
+  # Chronological 80/20. The tail 20% is the test set and is never used for
+  # fitting, scaling or model selection.
+  test_ratio: 0.2
+
+  # Expanding window, kept for the ablation that chooses the feature set.
   validation_years: [2020, 2021, 2022, 2023, 2024, 2025]
   gap: 1                      # rows skipped between train and validation
 
@@ -51,6 +59,39 @@ model:
   # target value seen in training, and the index roughly triples over the
   # study window, so a linear learner is required for the later folds.
   included_model_types: ["LR", "GBM", "CAT", "XGB", "RF"]
+
+# The four model families compared head to head on the 80/20 split.
+zoo:
+  svr:
+    kernel: "rbf"
+    C: 100.0
+    epsilon: 0.1
+    gamma: "scale"
+
+  xgboost:
+    n_estimators: 600
+    max_depth: 5
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+
+  lstm:
+    window: 20                # trading days fed to the network
+    hidden_size: 64
+    num_layers: 2
+    dropout: 0.2
+    epochs: 60
+    batch_size: 64
+    learning_rate: 0.001
+    patience: 10              # early stopping on the tail of the training block
+    # The target is standardised, never min-max scaled. A [0,1] target puts a
+    # hard ceiling on the output layer, and 98% of the test block sits above
+    # the training maximum, so the network could not reach it by construction.
+
+explain:
+  shap_background: 200        # rows sampled for the SHAP background set
+  shap_sample: 400            # test rows explained
+  permutation_repeats: 10
 
 dashboard:
   race_freq: "ME"             # month-end frames; daily would be ~2515 frames

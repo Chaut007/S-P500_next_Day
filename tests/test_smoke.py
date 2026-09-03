@@ -23,7 +23,7 @@ from src.features.build_features import (
 from src.features.marketcap import compute_market_caps, rank_top_n
 from src.features.trend import build_trend_features
 from src.models.evaluate import mean_squared_percentage_error, regression_metrics
-from src.models.split import expanding_year_folds
+from src.models.split import chronological_split, expanding_year_folds
 
 
 @pytest.fixture
@@ -208,6 +208,28 @@ def test_folds_expand_and_never_overlap(calendar, cfg):
 
         valid_years = dates.iloc[fold.valid_idx].dt.year.unique()
         assert list(valid_years) == [fold.year]
+
+
+def test_chronological_split_puts_the_test_block_last(calendar, cfg):
+    """Every test row must sit after every training row, and the ratio must hold."""
+    dates = pd.Series(calendar)
+    train_idx, test_idx = chronological_split(dates, cfg)
+
+    assert train_idx.max() < test_idx.min(), "a test row precedes a training row"
+    assert set(train_idx).isdisjoint(test_idx), "train/test overlap"
+    assert len(train_idx) + len(test_idx) == len(dates), "rows were dropped"
+
+    ratio = len(test_idx) / len(dates)
+    assert ratio == pytest.approx(cfg["split"]["test_ratio"], abs=0.01)
+
+    assert dates.iloc[train_idx].max() < dates.iloc[test_idx].min()
+
+
+def test_chronological_split_rejects_unsorted_dates(calendar, cfg):
+    """Splitting by position is only meaningful on ordered rows."""
+    shuffled = pd.Series(calendar).sample(frac=1.0, random_state=0)
+    with pytest.raises(ValueError, match="sorted"):
+        chronological_split(shuffled, cfg)
 
 
 def test_gap_separates_train_from_validation(calendar, cfg):
