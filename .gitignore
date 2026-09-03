@@ -1,0 +1,42 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Secrets
+.env
+
+# Downloaded and derived data.
+# Large and fully reproducible from `python -m scripts.run_data`.
+# mcap_daily.parquet alone is ~10 MB.
+data/raw/*
+data/interim/*
+data/processed/*
+!data/**/.gitkeep
+
+# Trained models. AutoGluon writes a directory tree per fold.
+models/*
+!models/.gitkeep
+
+logs/*
+!logs/.gitkeep
+
+reports/figures/*
+!reports/figures/.gitkeep
+
+# Kept in version control on purpose:
+#   reports/*.parquet   -- the numbers quoted in README.md (~170 KB total)
+#   assets/*.mp4        -- the dashboard home-page animation (~830 KB)
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# IDE / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

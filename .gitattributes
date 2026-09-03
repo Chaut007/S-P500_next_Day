@@ -1,0 +1,7 @@
+# Normalise line endings so the repo stays consistent across machines.
+* text=auto eol=lf
+
+# Binary artifacts must not be touched.
+*.mp4 binary
+*.parquet binary
+*.ipynb -text

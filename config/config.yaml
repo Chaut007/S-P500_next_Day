@@ -1,0 +1,64 @@
+# Central configuration. Nothing in src/ may hard-code these values.
+
+project:
+  name: SP555
+  random_state: 42
+
+data:
+  start_date: "2016-01-01"
+  end_date: "2025-12-31"
+
+  index_ticker: "^GSPC"
+
+  # Market cap must be built from the split-adjusted, dividend-UNadjusted close.
+  # "Adj Close" also removes dividends, which pushes historical prices down by
+  # roughly 20% over ten years and corrupts the market-cap ranking.
+  price_col: "Close"
+
+  gold_ticker: "GLD"          # ETF: trades on the US equity calendar
+  fred_series: ["DGS10", "DGS2", "T10Y2Y"]
+
+  download_batch_size: 60     # tickers per yfinance request
+  max_missing_ratio: 0.5      # drop a ticker if more than this fraction is missing
+
+target:
+  horizon: 1                  # predict the index close at t + horizon
+
+features:
+  top_n: 10
+  top_n_sweep: [5, 10, 20]
+
+  trend:
+    momentum_windows: [5, 20]
+    ma_window: 20
+
+  # Ablation ladder. Each set adds one layer on top of the previous.
+  sets:
+    A: ["mcap"]
+    B: ["mcap", "trend"]
+    C: ["mcap", "trend", "macro"]
+
+split:
+  # Expanding window: train on everything before the validation year.
+  validation_years: [2020, 2021, 2022, 2023, 2024, 2025]
+  gap: 1                      # rows skipped between train and validation
+
+model:
+  eval_metric: "r2"
+  presets: "medium_quality"
+  time_limit: 240             # seconds per fold
+  # LR must stay in this list. Tree models cannot predict above the highest
+  # target value seen in training, and the index roughly triples over the
+  # study window, so a linear learner is required for the later folds.
+  included_model_types: ["LR", "GBM", "CAT", "XGB", "RF"]
+
+dashboard:
+  race_freq: "ME"             # month-end frames; daily would be ~2515 frames
+  race_top_n: 10
+  race_fps: 10
+  race_seconds_per_frame: 0.1
+
+logging:
+  level: INFO
+  max_bytes: 5242880
+  backup_count: 5
