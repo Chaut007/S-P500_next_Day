@@ -13,8 +13,11 @@ pandas-datareader>=0.10
 lxml>=5.0                 # pandas.read_html for the S&P 500 constituent table
 
 # --- Modelling ---
-scikit-learn>=1.5
+scikit-learn>=1.5             # SVR, scaling, metrics
 autogluon.tabular[lightgbm,catboost,xgboost]>=1.1
+xgboost>=2.0                  # also used standalone in the four-model comparison
+torch>=2.0                    # LSTM; the CPU wheel is enough
+shap>=0.45                    # TreeSHAP on the XGBoost model
 
 # --- Config / utils ---
 PyYAML>=6.0

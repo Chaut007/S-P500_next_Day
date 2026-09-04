@@ -50,12 +50,22 @@ if stats is not None and not stats.empty:
         )
 
     with right:
-        mean_rho = stats["spearman_rho"].mean()
-        mean_r = stats["pearson_r"].mean()
+        valid = stats["spearman_rho"].notna()
+        mean_rho = stats.loc[valid, "spearman_rho"].mean()
+        mean_r = stats.loc[valid, "pearson_r"].mean()
         st.metric("Mean Spearman ρ", f"{mean_rho:.3f}",
                   help="Rank correlation between weight and importance")
         st.metric("Mean Pearson r", f"{mean_r:.3f}",
                   help="Linear correlation, shown for contrast")
+
+        if not valid.all():
+            skipped = ", ".join(stats.loc[~valid, "fold"])
+            st.caption(
+                f"Averaged over {int(valid.sum())} of {len(stats)} folds. "
+                f"{skipped} produced no permutation importances above zero, so "
+                "the normalised importance and its correlation with weight are "
+                "undefined for that fold."
+            )
         st.markdown(
             "Spearman is the honest statistic here: the claim under test is "
             "that the relationship is **not** linear, and rank correlation "

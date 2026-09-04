@@ -1,153 +1,191 @@
-"""Linear against trees -- why the model pool must contain a linear learner."""
+"""Four model families on one chronological 80/20 split."""
 
 from __future__ import annotations
 
+import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
-from lib import page_config, report, require
+from lib import gradient_row, page_config, report, require
 
 page_config("Model comparison")
 
-st.title("Linear against trees")
+st.title("Four models, one split")
 
 st.markdown(
     """
-Gradient boosted trees and random forests predict by averaging the training
-targets that land in a leaf, so they **cannot return a value above the highest
-target they were trained on**. The S&P 500 roughly triples across this window,
-which means most folds ask them for a number they cannot produce.
-
-The design assumed a linear learner would therefore win: the index is a weighted
-sum of constituent market caps, and a linear model has no ceiling. `LR` was
-pinned into the model pool for exactly that reason, and this page scores every
-model individually on the real validation window rather than on the tuning split
-AutoGluon uses to choose its ensemble.
+AutoGluon, XGBoost, SVR and an LSTM are trained on the leading **80%** of
+trading days and scored on the trailing **20%**, all on feature set **C** at
+N = 10. No model sees a test row while fitting, scaling or early stopping.
 """
 )
 
+scores = report("model_scores.parquet")
+if not require(scores, "python -m scripts.run_models"):
+    st.stop()
+
+scores = scores.sort_values("mae").reset_index(drop=True)
+best = scores.iloc[0]
+above = float(scores["pct_test_above_train_max"].iloc[0])
+
+# --- Headline ---------------------------------------------------------------
+
+gradient_row(
+    [
+        ("Best model", str(best["model"]), f"MAE {best['mae']:,.0f} index points"),
+        ("Test above training range", f"{above:.1f}%",
+         "of the 20% test block sets new highs"),
+        ("Best skill vs naive", f"{scores['skill_mae'].min():.1f}×",
+         "1.0 would match doing nothing"),
+        ("Smallest shortfall", f"{scores['shortfall'].min():,.0f}",
+         "points short of the actual high"),
+    ]
+)
+
 st.error(
-    "**The assumption was wrong.** `LinearModel` finishes second from last, "
-    "worse than every tree. A single fitted slope cannot span a relationship "
-    "that drifts by a factor of 2.2 across the decade (see **Explanatory "
-    "Power**), so the linear model projects the wrong slope indefinitely while "
-    "the trees at least clamp to their training range — which bounds the error "
-    "rather than compounding it. The ceiling is real; escaping it is not "
-    "sufficient.",
+    f"**Every model loses to the naive forecast, by {scores['skill_mae'].min():.0f}× "
+    f"to {scores['skill_mae'].max():.0f}×.** This split is a harder test than it "
+    f"looks: **{above:.1f}%** of the test block sits above the highest index level "
+    "in training. Three of these four families cannot return a value above their "
+    "training range at all, so what is being measured here is the extrapolation "
+    "ceiling rather than fit quality.",
     icon="✖️",
 )
 
-comparison = report("model_comparison.parquet")
-if not require(comparison, "python -m scripts.run_train"):
-    st.stop()
+st.divider()
 
-# --- Overall ranking --------------------------------------------------------
+# --- Scoreboard -------------------------------------------------------------
 
-st.subheader("Mean validation error by model")
+st.subheader("Test scores")
 
-overall = (
-    comparison.groupby("model")[["mae", "r2", "skill_mae"]]
-    .mean()
-    .sort_values("mae")
-    .reset_index()
+columns = ["model", "mae", "rmse", "mape", "r2", "skill_mae",
+           "directional_accuracy", "shortfall"]
+display = scores[[c for c in columns if c in scores.columns]].rename(columns={
+    "model": "Model", "mae": "MAE", "rmse": "RMSE", "mape": "MAPE %",
+    "r2": "R²", "skill_mae": "Skill (MAE)",
+    "directional_accuracy": "Directional acc.", "shortfall": "Shortfall",
+})
+
+st.dataframe(
+    display.style.format({
+        "MAE": "{:,.1f}", "RMSE": "{:,.1f}", "MAPE %": "{:.2f}",
+        "R²": "{:.3f}", "Skill (MAE)": "{:.1f}",
+        "Directional acc.": "{:.3f}", "Shortfall": "{:,.0f}",
+    }),
+    use_container_width=True,
+    hide_index=True,
 )
 
-left, right = st.columns([1, 1])
+st.caption(
+    "`Skill (MAE)` is the model's error divided by the naive \"tomorrow equals "
+    "today\" error, so below 1.0 beats doing nothing. `Shortfall` is the year's "
+    "actual high minus the model's highest prediction: a large positive value "
+    "means the model never came close to the top of the range."
+)
+
+left, right = st.columns(2)
 
 with left:
-    st.dataframe(
-        overall.rename(columns={
-            "model": "Model", "mae": "Mean MAE",
-            "r2": "Mean R²", "skill_mae": "Skill (MAE)",
-        }).style.format({
-            "Mean MAE": "{:.1f}", "Mean R²": "{:.3f}", "Skill (MAE)": "{:.2f}",
-        }),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-with right:
     fig = px.bar(
-        overall, x="mae", y="model", orientation="h",
-        labels={"mae": "Mean MAE (index points)", "model": ""},
+        scores, x="mae", y="model", orientation="h",
+        labels={"mae": "Test MAE (index points)", "model": ""},
         height=320,
     )
     fig.update_layout(margin=dict(l=0, r=0, t=10, b=0),
                       yaxis=dict(categoryorder="total descending"))
     st.plotly_chart(fig, use_container_width=True)
 
-st.divider()
-
-# --- The ceiling ------------------------------------------------------------
-
-st.subheader("The prediction ceiling")
-
-st.markdown(
-    "If a model cannot extrapolate, its largest prediction is pinned near the "
-    "largest target it saw in training, while the actual index climbs past it. "
-    "The gap below is that ceiling, measured directly."
-)
-
-ceiling = comparison.copy()
-ceiling["shortfall"] = ceiling["actual_max"] - ceiling["pred_max"]
-
-fig = px.bar(
-    ceiling.groupby(["fold", "model"])["shortfall"].mean().reset_index(),
-    x="fold", y="shortfall", color="model", barmode="group",
-    labels={"shortfall": "Actual max − predicted max (points)",
-            "fold": "", "model": "Model"},
-    height=440,
-)
-fig.add_hline(y=0, line_color="#999999")
-fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
-st.plotly_chart(fig, use_container_width=True)
-
-st.caption(
-    "A tall positive bar means the model never got near the year's actual high. "
-    "Bars close to zero mean the model tracked the index into new territory."
-)
+with right:
+    fig = px.bar(
+        scores, x="shortfall", y="model", orientation="h",
+        labels={"shortfall": "Actual high − highest prediction", "model": ""},
+        height=320,
+    )
+    fig.add_vline(x=0, line_color="#9BA4BE")
+    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0),
+                      yaxis=dict(categoryorder="total descending"))
+    st.plotly_chart(fig, use_container_width=True)
 
 st.divider()
 
-# --- Per fold ---------------------------------------------------------------
+# --- Predictions ------------------------------------------------------------
 
-st.subheader("By fold")
+st.subheader("Predicted against actual")
 
-metric = st.selectbox("Metric", ["mae", "r2", "skill_mae", "mape", "mspe"])
+predictions = report("model_predictions.parquet")
+if require(predictions, "python -m scripts.run_models"):
+    predictions = predictions.copy()
+    predictions["date"] = pd.to_datetime(predictions["date"])
 
-folds = sorted(comparison["fold"].unique())
-chosen_sets = st.multiselect(
-    "Feature sets", sorted(comparison["feature_set"].unique()),
-    default=sorted(comparison["feature_set"].unique()),
-)
+    chosen = st.multiselect(
+        "Models",
+        sorted(predictions["model"].unique()),
+        default=sorted(predictions["model"].unique()),
+    )
 
-subset = comparison[comparison["feature_set"].isin(chosen_sets)]
+    subset = predictions[predictions["model"].isin(chosen)]
+    if subset.empty:
+        st.info("Select at least one model.")
+    else:
+        first = subset[subset["model"] == chosen[0]].sort_values("date")
 
-fig = px.line(
-    subset.sort_values("year"),
-    x="year", y=metric, color="model", markers=True,
-    facet_col="feature_set" if len(chosen_sets) > 1 else None,
-    labels={metric: metric.upper(), "year": "Validation year", "model": "Model"},
-    height=440,
-)
-fig.update_layout(margin=dict(l=0, r=0, t=40, b=0))
-st.plotly_chart(fig, use_container_width=True)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=first["date"], y=first["actual"], name="Actual",
+            line=dict(color="#EDF0F7", width=2.5)))
+        fig.add_trace(go.Scatter(
+            x=first["date"], y=first["baseline"], name="Naive baseline",
+            line=dict(color="#7E8AA6", width=1, dash="dot")))
+
+        for model in chosen:
+            block = subset[subset["model"] == model].sort_values("date")
+            fig.add_trace(go.Scatter(
+                x=block["date"], y=block["predicted"], name=model,
+                line=dict(width=2)))
+
+        train_max = float(scores["train_max"].iloc[0])
+        fig.add_hline(
+            y=train_max, line_dash="dash", line_color="#F472B6",
+            annotation_text="highest level seen in training",
+            annotation_position="bottom left",
+        )
+
+        fig.update_layout(
+            height=480, margin=dict(l=0, r=0, t=10, b=0),
+            yaxis_title="Index level",
+            legend=dict(orientation="h", y=1.1),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.caption(
+            "The dashed pink line is the ceiling. Everything the tree and kernel "
+            "models predict stays underneath it while the actual index climbs "
+            "away above."
+        )
+
+st.divider()
 
 st.markdown(
     """
-**2022 is the control.** It is the only validation year where the index stayed
-inside the range the models had already seen, and every model looks respectable
-there. Everywhere else the ranking is set by how a model fails once it leaves
-that range — by flattening against a ceiling, or by extrapolating a slope that
-the drift has already invalidated.
+**What the ranking is actually measuring.** On a test block where almost every
+row is a new high, a model's score is set by how it fails once it leaves the
+range it was fitted on:
 
-The ensemble wins overall because blending the two failure modes is less bad
-than committing to either.
+- **XGBoost** averages the training targets inside a leaf, so its largest
+  possible prediction is the largest target it saw. It flattens.
+- **SVR** with an RBF kernel decays toward its bias term as the inputs move away
+  from the support vectors, so it does not merely flatten — it drifts back
+  toward the training mean.
+- **LSTM** has a linear output layer and a standardised target, so nothing caps
+  it arithmetically. It extrapolates further than the other two, which is why
+  its shortfall is the smallest of the three.
+- **AutoGluon** carries a linear member in its ensemble, which is the only part
+  of it with no ceiling at all.
+
+None of this makes any of them useful here. The naive forecast is handed today's
+index level and the models are not, and no amount of model capacity closes that
+gap — see **Explanatory Power** for the half of the question these scores do not
+answer.
 """
 )
-
-with st.expander("Full per-model results"):
-    columns = [c for c in ["feature_set", "fold", "year", "model", "mae", "mape",
-                           "mspe", "r2", "skill_mae", "pred_max", "actual_max"]
-               if c in comparison.columns]
-    st.dataframe(comparison[columns], use_container_width=True, hide_index=True)

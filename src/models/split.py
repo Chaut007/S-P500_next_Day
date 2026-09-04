@@ -83,6 +83,44 @@ def expanding_year_folds(
     return folds
 
 
+def chronological_split(
+    dates: pd.Series,
+    cfg: dict[str, Any] | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Split ordered rows into a leading train block and a trailing test block.
+
+    Returns (train_idx, test_idx) as positions into `dates`, which is assumed
+    already sorted. The cut is by position rather than by date so the ratio
+    holds regardless of how many rows the feature warm-up dropped.
+
+    There is no shuffling here for the same reason there is no random splitter
+    above: the tail block has to be the future, or the score means nothing.
+    """
+    cfg = cfg or load_config()
+    ratio = cfg["split"]["test_ratio"]
+
+    if not 0.0 < ratio < 1.0:
+        raise ValueError(f"split.test_ratio must lie in (0, 1), got {ratio}")
+
+    dates = pd.to_datetime(dates).reset_index(drop=True)
+    if not dates.is_monotonic_increasing:
+        raise ValueError("dates must be sorted before splitting")
+
+    n = len(dates)
+    cut = int(n * (1.0 - ratio))
+    if cut < 1 or cut >= n:
+        raise ValueError(f"test_ratio {ratio} leaves an empty block for {n} rows")
+
+    positions = np.arange(n)
+    train_idx, test_idx = positions[:cut], positions[cut:]
+
+    log.info("Chronological split | train %d rows (%s to %s) | test %d rows (%s to %s)",
+             len(train_idx), dates.iloc[0].date(), dates.iloc[cut - 1].date(),
+             len(test_idx), dates.iloc[cut].date(), dates.iloc[-1].date())
+
+    return train_idx, test_idx
+
+
 def iter_folds(
     X: pd.DataFrame,
     y: pd.Series,

@@ -11,6 +11,7 @@ Writes per-fold metrics, predictions and leaderboards into reports/.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -43,8 +44,6 @@ def parse_args() -> argparse.Namespace:
 
 def load_dataset(args: argparse.Namespace, cfg: dict) -> tuple[pd.DataFrame, list[str], list[str], int]:
     """Return (table, trend_cols, macro_cols, top_n) from cache or a fresh build."""
-    top_n = cfg["features"]["top_n"]
-
     if args.rebuild or args.force_download or not Path(DATASET_PATH).exists():
         dataset = build_dataset(force_download=args.force_download, cfg=cfg)
         save_table(dataset.table, DATASET_PATH)
@@ -54,7 +53,16 @@ def load_dataset(args: argparse.Namespace, cfg: dict) -> tuple[pd.DataFrame, lis
     table = load_table(DATASET_PATH)
 
     # Recover the block membership from the column names so the cached table can
-    # be used without rebuilding every source.
+    # be used without rebuilding every source. `top_n` is read from the columns
+    # actually present rather than the current config, so a dataset cached with
+    # a different `features.top_n` does not leak its extra x-columns into the
+    # trend block.
+    x_indices = [int(m.group(1)) for c in table.columns
+                 if (m := re.fullmatch(r"x(\d+)", c))]
+    if not x_indices:
+        raise ValueError(f"No market-cap columns (x1, x2, ...) found in {DATASET_PATH}")
+    top_n = max(x_indices)
+
     mcap_cols = {f"x{i}" for i in range(1, top_n + 1)}
     macro_cols = [c for c in table.columns
                   if c in set(cfg["data"]["fred_series"]) | {"gold_return"}]

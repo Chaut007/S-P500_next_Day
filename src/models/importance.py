@@ -76,6 +76,9 @@ def compare_weight_and_importance(
         raise ValueError("No overlap between weight slots and importance features")
 
     total = merged["importance"].clip(lower=0).sum()
+    if total <= 0:
+        log.warning("Every permutation importance is <= 0; normalised importance "
+                     "and its correlation with weight are undefined for this fold")
     merged["importance_norm"] = (
         merged["importance"].clip(lower=0) / total if total > 0 else np.nan
     )

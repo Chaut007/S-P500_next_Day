@@ -50,7 +50,8 @@ Always run from the project root; the modules import as `src.*`.
 python -m scripts.run_data          # download, rank, assemble the dataset
 python -m scripts.build_race        # render the home-page animation
 python -m scripts.run_train         # expanding-window ablation A / B / C
-python -m scripts.run_experiments   # N sweep and weight vs importance
+python -m scripts.run_experiments   # explanatory power and weight vs importance
+python -m scripts.run_models        # four models on the 80/20 split + SHAP
 pytest -q                           # leakage and alignment tests
 
 streamlit run app/Home.py           # dashboard
@@ -113,9 +114,17 @@ enters as a return, because its price roughly doubled over the window and a
 second trending series would manufacture correlation with an index that also
 trended up.
 
-### Validation
+### Splitting
 
-Expanding window, one fold per validation year:
+Two splits, for two different jobs.
+
+**Chronological 80/20** is the headline. The leading 80% of trading days trains,
+the trailing 20% tests, and nothing about the test block reaches the models —
+not the scalers, not AutoGluon's tuning split, not the LSTM's early stopping.
+This is the split the four-model comparison runs on.
+
+**Expanding window** is used only to choose the feature set, one fold per
+validation year:
 
 | Fold | Train | Validate |
 |---|---|---|
@@ -160,13 +169,16 @@ cannot produce:
 | 2020 | 53% |
 | 2021 | 98% |
 | **2022** | **0%** |
-| 2023 | 0% |
+| **2023** | **0%** |
 | 2024 | 96% |
 | 2025 | 56% |
 
-2022 is the control: the one bear market in the window, and the only year where
-the target stays inside the range already seen. Model quality tracks this column
-more closely than it tracks anything about the features.
+2022 and 2023 are the controls: the two years where the target stays inside the
+range already seen. Model quality tracks this column more closely than it tracks
+anything about the features — but not perfectly, and the imperfection is
+informative. 2022 is the best fold in the study; 2023 is one of the worst. The
+ceiling is one of two failure modes, not the whole story; the other is the
+coefficient drift documented below.
 
 This is why `LR` is pinned into `model.included_model_types` and why
 `scripts/run_train.py` scores **every model individually on the validation
@@ -200,28 +212,50 @@ Regressing the index level on the ten market caps **inside each year**:
 | 2024 | 0.967 | 0.99% | 0.293 |
 | 2025 | 0.978 | 0.84% | 0.267 |
 
-Never below 0.92. The answer to the research question is yes.
+Never below 0.91. The answer to the research question is yes.
 
 ### But the relationship drifts
 
-The last column is the coefficient a model has to learn, and it falls
-**monotonically by a factor of 2.2** across the decade. The top-ten block grew
-6.65× while the index grew 2.97× — the block outgrew the index 2.24 times over.
+The last column is the coefficient a model has to learn, and it falls **by a
+factor of 2.2** across the decade — in nine of the ten year-on-year steps, the
+exception being 2021 to 2022, when the bear market lifted it briefly. The
+top-ten block grew 6.65× while the index grew 2.97×; the block outgrew the index
+2.24 times over.
 
 Consequence: any model fitted on earlier years expects more index per unit of
-top-ten market cap than later years deliver, and **over-predicts**. Mean error on
-the expanding folds runs +424, +380, +318, +513 points. The single exception is
-2022, the only validation year whose values stay inside the range already seen,
-where R² reaches 0.74–0.78 while every other fold is negative.
+top-ten market cap than later years deliver, and **over-predicts**. That is the
+dominant error wherever the ceiling is not active — 2023 lies entirely inside
+the training range and is over-predicted by +249 to +325 points depending on the
+feature set, and 2020 by +224 to +331.
+
+Where the index instead runs far above the training range, the extrapolation
+ceiling pulls the other way and wins: 2021, 2024 and 2025 come out net
+**under**-predicted, by as much as −697 points in 2024. Mean signed error
+(predicted − actual) by validation year:
+
+| Set | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 |
+|---|---|---|---|---|---|---|
+| A | +331 | −365 | −41 | +325 | −697 | −110 |
+| B | +316 | −322 | −24 | +249 | −677 | −108 |
+| C | +224 | −311 | +30 | +250 | −631 | −69 |
+
+The two mechanisms are what make the sign flip across folds. R² is positive on
+2022 and 2025 for every feature set (0.74–0.80) and on 2020 for set C alone; it
+is negative on 2021, 2023 and 2024 throughout.
 
 ### Two hypotheses that turned out wrong
 
 Both were in the original design and both were falsified by the run:
 
 1. **"A linear model will extrapolate, since the index is a weighted sum."**
-   `LinearModel` scored MAE 782 — worse than every tree. One fixed slope cannot
-   span a 2.2× drift; the trees at least clamp to their training range, which
-   bounds the error instead of projecting the wrong slope indefinitely.
+   `LinearModel` scored mean MAE 782, second from last — behind `RandomForest`
+   (678), `LightGBM` (685) and `XGBoost` (714), ahead of only `CatBoost` (794).
+   It does escape the ceiling: its highest prediction *overshoots* the year's
+   actual high in every fold, where every tree model undershoots in every fold.
+   Escaping the ceiling only trades undershooting for overshooting. One fixed
+   slope cannot span a 2.2× drift, while the trees at least clamp to their
+   training range, which bounds the error instead of projecting a wrong slope
+   indefinitely.
 2. **"Normalising the target by the block total will fix the range problem."**
    It made things far worse (skill 60+). Dividing the features by `S(t)` turns
    them into within-block weights that sum to one, destroying the level
@@ -230,17 +264,53 @@ Both were in the original design and both were falsified by the run:
 Both are recorded here rather than quietly removed, because the design document
 asserted them and the data did not agree.
 
-### How many constituents?
+### Four model families on a chronological 80/20 split
 
-| N | Mean R² | SD | Mean MAE | Skill |
-|---|---|---|---|---|
-| 5 | −0.652 | 1.94 | 327.6 | 9.67 |
-| 10 | −0.931 | 1.71 | 343.6 | 10.58 |
-| 20 | **−0.095** | 1.82 | **241.4** | **7.35** |
+Feature set C at N = 10. Train is the leading 1,994 trading days
+(Feb 2016 – Jan 2024); test is the trailing 499 (Jan 2024 – Dec 2025). No model
+sees a test row while fitting, scaling or early stopping.
 
-No knee. Accuracy improves with N, and the spread across folds is larger than
-the gap between values of N — the validation year matters more than the count.
-Ten is defensible as a reporting choice, not as an optimum the data selects.
+| Model | Test MAE | R² | Skill | Highest prediction | Shortfall |
+|---|---|---|---|---|---|
+| AutoGluon | **940.8** | −2.37 | 24.6 | 5,133 | **1,799** |
+| LSTM | 978.3 | −2.70 | 25.6 | 4,971 | 1,961 |
+| XGBoost | 1,147.2 | −4.03 | 30.1 | 4,760 | 2,172 |
+| SVR | 2,181.9 | −15.92 | 57.2 | 4,686 | 2,246 |
+
+The training block tops out at **4,796.6** and the test block reaches
+**6,932.0**, so **98.2%** of the test rows sit above anything the models were
+fitted on. That single number explains the whole table: the MAE ranking is
+exactly the ranking of how far each model can reach past its training maximum.
+
+- **SVR** (4,686) and **XGBoost** (4,760) never even reach the training maximum.
+  A tree averages the training targets in a leaf; an RBF kernel decays toward
+  its bias term as inputs leave the support vectors. Both are capped by
+  construction.
+- **LSTM** (4,971) and **AutoGluon** (5,133) clear it. The LSTM does so because
+  its target is standardised rather than min-max scaled — a `[0, 1]` target
+  would have capped the output layer at the training maximum and made 98% of
+  the test set unreachable by arithmetic rather than by modelling. AutoGluon
+  does so through the linear member of its ensemble.
+
+None of them is remotely useful: the best still loses to the naive forecast by
+**24.6×**. The comparison measures the extrapolation ceiling, not fit quality.
+
+### Feature importance
+
+TreeSHAP on XGBoost ranks the middle slots above the largest: `x9` (mean |SHAP|
+457.7), `x4` (261.2), `x10` (190.5), `x5` (166.1). `x1` does not reach the top
+eight. This is the same conclusion the Spearman analysis reaches from the other
+direction — a constituent's size says little about how much the model leans on
+its slot.
+
+Permutation importance, run across all four models, is **uninformative here and
+that is itself the result**. The largest effect any single feature has on any
+model is 4.0% of its baseline error, and for AutoGluon the top feature moves MAE
+by 0.33 points out of 940.85. Shuffling a column cannot matter much when the
+error is made almost entirely of the gap between where a model can reach and
+where the index actually went. SVR shows the only visible response, because
+decaying toward the training mean makes it more input-sensitive than models that
+simply flatten.
 
 ### Weight against importance
 
@@ -254,8 +324,9 @@ carries essentially no information about how much the model relies on its slot.
 
 ### Forecasting
 
-Every configuration loses to the naive forecast, by factors of roughly 6 to 10.
-This is unfavourable by construction: the naive rule is handed today's index
+Every configuration loses to the naive forecast, by factors ranging from 2.1
+(set B on 2022) to 21.7 (set A on 2024). This is unfavourable by construction:
+the naive rule is handed today's index
 level, which the design deliberately withholds from the model. The result says
 the top ten do not pin down the index level as precisely as yesterday's index
 does — which was never in doubt — and should not be read as evidence that the
@@ -285,8 +356,10 @@ src/
   features/trend.py      momentum and concentration features
   features/macro.py      rate and gold controls
   features/build_features.py  assembly, target, ablation sets
-  models/split.py        expanding-window folds
+  models/split.py        expanding-window folds and the 80/20 split
   models/train.py        AutoGluon, per-model scoring
+  models/zoo.py          AutoGluon / XGBoost / SVR / LSTM behind one interface
+  models/explain.py      permutation importance and TreeSHAP
   models/evaluate.py     MAE / MSE / MAPE / MSPE / R² plus baseline
   models/importance.py   weight vs permutation importance
 
@@ -304,11 +377,14 @@ Change `config/config.yaml` only.
 | To change | Edit |
 |---|---|
 | Number of constituents | `features.top_n` |
-| N sweep values | `features.top_n_sweep` |
+| Feature set for the model comparison | `features.best_set` |
 | Study window | `data.start_date`, `data.end_date` |
 | Prediction horizon | `target.horizon` |
-| Validation years | `split.validation_years` |
-| Model pool / time budget | `model.included_model_types`, `model.time_limit` |
+| Train/test proportion | `split.test_ratio` |
+| Validation years (ablation) | `split.validation_years` |
+| AutoGluon pool / time budget | `model.included_model_types`, `model.time_limit` |
+| SVR / XGBoost / LSTM settings | `zoo.svr`, `zoo.xgboost`, `zoo.lstm` |
+| SHAP sample sizes | `explain.shap_sample`, `explain.shap_background` |
 | Animation smoothness | `dashboard.race_freq`, `race_fps` |
 
 ---
