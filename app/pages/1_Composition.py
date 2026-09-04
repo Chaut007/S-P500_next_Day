@@ -185,6 +185,9 @@ with pie_left:
     fig.update_traces(
         textposition="inside",
         texttemplate="%{percent:.1%}",
+        # Plotly picks a mid grey by default, which only just clears 3.5:1 on
+        # the saturated wedges. Pinning near-black takes every wedge past 6:1.
+        insidetextfont=dict(color="#111320", size=13),
         hovertemplate="%{label}<br>%{percent:.2%} of the block<br>"
                       "%{customdata:,.0f} bn USD-days<extra></extra>",
         customdata=major["mcap"],
