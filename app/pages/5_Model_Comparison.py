@@ -165,6 +165,87 @@ if require(predictions, "python -m scripts.run_models"):
 
 st.divider()
 
+# --- Tuning -----------------------------------------------------------------
+
+st.subheader("Does tuning change any of this?")
+
+tuning = report("tuning_results.parquet")
+tuned_scores = report("model_scores_tuned.parquet")
+
+if tuning is None or tuning.empty:
+    st.info("Not built yet. Run `python -m scripts.run_tuning` from the project root.")
+else:
+    searched = sorted(tuning["model"].unique())
+    st.markdown(
+        f"Grid search over **{len(tuning)}** parameter combinations for "
+        f"**{', '.join(searched)}**, scored by MAE on `TimeSeriesSplit` folds "
+        "**inside the training block**. The test block takes no part in the "
+        "search — tuning on it would pick whatever suits the 20% being reported."
+    )
+
+    best_rows = (
+        tuning.sort_values("cv_mae").groupby("model", as_index=False).first()
+        .rename(columns={"model": "Model", "params": "Best parameters",
+                         "cv_mae": "CV MAE", "cv_mae_std": "CV SD"})
+    )
+    table(
+        best_rows[["Model", "Best parameters", "CV MAE", "CV SD"]].style.format(
+            {"CV MAE": "{:,.1f}", "CV SD": "{:,.1f}"}
+        ),
+        hide_index=True,
+    )
+
+    if tuned_scores is not None and not tuned_scores.empty:
+        merged = (
+            scores[["model", "mae", "shortfall"]]
+            .merge(tuned_scores[["model", "mae", "shortfall"]],
+                   on="model", suffixes=("_default", "_tuned"))
+        )
+        merged["Δ MAE"] = merged["mae_tuned"] - merged["mae_default"]
+        merged["Δ %"] = merged["Δ MAE"] / merged["mae_default"] * 100
+
+        st.markdown("**Test MAE before and after tuning**")
+        table(
+            merged.rename(columns={
+                "model": "Model", "mae_default": "Default",
+                "mae_tuned": "Tuned", "shortfall_tuned": "Shortfall (tuned)",
+            })[["Model", "Default", "Tuned", "Δ MAE", "Δ %", "Shortfall (tuned)"]]
+            .style.format({
+                "Default": "{:,.1f}", "Tuned": "{:,.1f}",
+                "Δ MAE": "{:+,.1f}", "Δ %": "{:+.1f}",
+                "Shortfall (tuned)": "{:,.0f}",
+            }),
+            hide_index=True,
+        )
+
+        improved = int((merged["Δ MAE"] < 0).sum())
+        best_tuned = float(tuned_scores["skill_mae"].min())
+        st.warning(
+            f"Tuning improved {improved} of {len(merged)} models on the test "
+            f"block, and the best skill is still **{best_tuned:.0f}×** worse "
+            "than the naive forecast. No setting of `max_depth` lets a tree "
+            "predict above the largest target it was trained on, and no kernel "
+            "width stops an RBF decaying toward its training mean. The ceiling "
+            "is a property of the model family, not of its hyperparameters.",
+            icon="⚠️",
+        )
+    else:
+        st.caption(
+            "Run `python -m scripts.run_models --tuned` to score these settings "
+            "on the test block and fill in the before/after comparison."
+        )
+
+    with st.expander("Every combination searched"):
+        table(
+            tuning.rename(columns={
+                "model": "Model", "params": "Parameters",
+                "cv_mae": "CV MAE", "cv_mae_std": "CV SD", "rank": "Rank",
+            }).style.format({"CV MAE": "{:,.1f}", "CV SD": "{:,.1f}"}),
+            hide_index=True,
+        )
+
+st.divider()
+
 st.markdown(
     """
 **What the ranking is actually measuring.** On a test block where almost every

@@ -1,0 +1,19 @@
+{
+  "SVR": {
+    "C": 100.0,
+    "epsilon": 0.01,
+    "gamma": 0.01
+  },
+  "XGBoost": {
+    "learning_rate": 0.03,
+    "max_depth": 3,
+    "n_estimators": 600,
+    "subsample": 1.0
+  },
+  "LSTM": {
+    "window": 10,
+    "hidden_size": 64,
+    "num_layers": 2,
+    "learning_rate": 0.001
+  }
+}

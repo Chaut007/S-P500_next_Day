@@ -8,11 +8,16 @@ Run from the project root:
     python -m scripts.run_models
     python -m scripts.run_models --models XGBoost SVR
     python -m scripts.run_models --skip-explain
+    python -m scripts.run_models --tuned      # uses reports/best_params.json
+
+A tuned run writes its artifacts with a `_tuned` suffix so both sets survive
+and the before/after comparison can be read off them.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -42,6 +47,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force-download", action="store_true")
     parser.add_argument("--skip-explain", action="store_true",
                         help="skip permutation importance and SHAP")
+    parser.add_argument("--tuned", action="store_true",
+                        help="use reports/best_params.json from run_tuning")
     return parser.parse_args()
 
 
@@ -86,7 +93,16 @@ def main() -> int:
     log.info("Feature set %s | %d features | test rows above the training max: %.1f%%",
              set_name, len(feature_cols), above)
 
-    fitted = fit_all(X_train, y_train, cfg, only=args.models)
+    tuned: dict[str, dict] = {}
+    if args.tuned:
+        path = REPORTS_DIR / "best_params.json"
+        if not path.exists():
+            log.error("No %s; run `python -m scripts.run_tuning` first", path)
+            return 1
+        tuned = json.loads(path.read_text(encoding="utf-8"))
+        log.info("Using tuned parameters for: %s", ", ".join(sorted(tuned)))
+
+    fitted = fit_all(X_train, y_train, cfg, only=args.models, params=tuned)
 
     metric_rows: list[dict] = []
     prediction_frames: list[pd.DataFrame] = []
@@ -120,9 +136,15 @@ def main() -> int:
         }))
 
     scores = pd.DataFrame(metric_rows).sort_values("mae").reset_index(drop=True)
-    save_table(scores, REPORTS_DIR / "model_scores.parquet")
+    scores["tuned"] = bool(tuned)
+
+    # The tuned run writes alongside the baseline rather than over it, so the
+    # before/after comparison survives; overwriting would leave nothing to
+    # compare the tuned numbers against.
+    suffix = "_tuned" if tuned else ""
+    save_table(scores, REPORTS_DIR / f"model_scores{suffix}.parquet")
     save_table(pd.concat(prediction_frames, ignore_index=True),
-               REPORTS_DIR / "model_predictions.parquet")
+               REPORTS_DIR / f"model_predictions{suffix}.parquet")
 
     log.info("Test scores (best MAE first):\n%s",
              scores[["model", "mae", "rmse", "mape", "r2", "skill_mae",
@@ -142,7 +164,7 @@ def main() -> int:
     ]
     if importances:
         save_table(pd.concat(importances, ignore_index=True),
-                   REPORTS_DIR / "feature_importance.parquet")
+                   REPORTS_DIR / f"feature_importance{suffix}.parquet")
 
     tree = next((m for m in fitted if m.name == "XGBoost"), None)
     if tree is None:
@@ -150,8 +172,8 @@ def main() -> int:
         return 0
 
     long, summary = shap_values(tree, X_test, sample=explain_cfg["shap_sample"], seed=seed)
-    save_table(long, REPORTS_DIR / "shap_values.parquet")
-    save_table(summary, REPORTS_DIR / "shap_summary.parquet")
+    save_table(long, REPORTS_DIR / f"shap_values{suffix}.parquet")
+    save_table(summary, REPORTS_DIR / f"shap_summary{suffix}.parquet")
 
     log.info("SHAP ranking:\n%s", summary.head(10).to_string(index=False))
     return 0

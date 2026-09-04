@@ -51,7 +51,9 @@ python -m scripts.run_data          # download, rank, assemble the dataset
 python -m scripts.build_logos       # company marks for the home-page leaderboard
 python -m scripts.run_train         # expanding-window ablation A / B / C
 python -m scripts.run_experiments   # explanatory power and weight vs importance
+python -m scripts.run_tuning        # grid search SVR / XGBoost / LSTM
 python -m scripts.run_models        # four models on the 80/20 split + SHAP
+python -m scripts.run_models --tuned   # the same run using the tuned settings
 pytest -q                           # leakage and alignment tests
 
 streamlit run app/Home.py           # dashboard
@@ -295,6 +297,38 @@ exactly the ranking of how far each model can reach past its training maximum.
 None of them is remotely useful: the best still loses to the naive forecast by
 **24.6×**. The comparison measures the extrapolation ceiling, not fit quality.
 
+### Hyperparameter tuning
+
+Grid search over 88 combinations, scored by MAE on `TimeSeriesSplit` folds
+**inside the training block**. The test block takes no part in the search.
+
+| Model | Combinations | Folds | Best settings | CV MAE |
+|---|---|---|---|---|
+| SVR | 36 | 5 | `C=100, gamma=0.01, epsilon=0.01` | 338.5 |
+| XGBoost | 36 | 5 | `max_depth=3, lr=0.03, n_estimators=600, subsample=1.0` | 247.0 |
+| LSTM | 16 | 3 | `window=10, hidden=64, layers=2, lr=0.001` | 502.1 |
+
+Scored on the test block, tuning helps two of the three and changes nothing
+that matters:
+
+| Model | Default MAE | Tuned MAE | Δ | Tuned skill |
+|---|---|---|---|---|
+| LSTM | 978.3 | 994.0 | **+15.8** | 26.0× |
+| XGBoost | 1,147.2 | 1,087.2 | −59.9 | 28.5× |
+| SVR | 2,181.9 | **1,707.2** | **−474.7** | 44.7× |
+
+SVR gains the most — widening `gamma` from `scale` to `0.01` slows the decay
+toward its training mean, and its shortfall falls from 2,246 to 1,821. The LSTM
+gets marginally worse, which is what a 3-fold CV on 16 candidates buys.
+
+The conclusion does not move. The best tuned model still loses to the naive
+forecast by 26×, and the shortfalls stay within a few per cent of where they
+were. No value of `max_depth` lets a tree predict above the largest target it
+was trained on, and no kernel width stops an RBF from decaying toward its
+training mean: the ceiling belongs to the model family, not to its
+hyperparameters. AutoGluon is not in this table because it searches its own
+model pool inside the time budget it is given.
+
 ### Feature importance
 
 TreeSHAP on XGBoost ranks the middle slots above the largest: `x9` (mean |SHAP|
@@ -392,6 +426,7 @@ Change `config/config.yaml` only.
 | Validation years (ablation) | `split.validation_years` |
 | AutoGluon pool / time budget | `model.included_model_types`, `model.time_limit` |
 | SVR / XGBoost / LSTM settings | `zoo.svr`, `zoo.xgboost`, `zoo.lstm` |
+| Grid search space | `tuning.svr.grid`, `tuning.xgboost.grid`, `tuning.lstm.grid` |
 | SHAP sample sizes | `explain.shap_sample`, `explain.shap_background` |
 | Leaderboard frames / bars | `dashboard.race_freq`, `dashboard.race_top_n` |
 

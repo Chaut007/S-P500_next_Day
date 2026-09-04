@@ -53,7 +53,8 @@ split:
 
 model:
   eval_metric: "r2"
-  presets: "medium_quality"
+  # No presets key: zoo.py passes an explicit hyperparameters dict, which
+  # overrides a preset entirely, so setting one here only misleads.
   time_limit: 240             # seconds per fold
   # LR must stay in this list. Tree models cannot predict above the highest
   # target value seen in training, and the index roughly triples over the
@@ -87,6 +88,35 @@ zoo:
     # The target is standardised, never min-max scaled. A [0,1] target puts a
     # hard ceiling on the output layer, and 98% of the test block sits above
     # the training maximum, so the network could not reach it by construction.
+
+# Grid search, run on the training block only and split further by
+# TimeSeriesSplit. Scored on MAE, the metric the study reports.
+tuning:
+  svr:
+    n_splits: 5
+    grid:
+      C: [1.0, 10.0, 100.0, 1000.0]
+      gamma: ["scale", 0.01, 0.1]
+      epsilon: [0.01, 0.1, 1.0]
+
+  xgboost:
+    n_splits: 5
+    grid:
+      n_estimators: [300, 600]
+      max_depth: [3, 5, 7]
+      learning_rate: [0.03, 0.05, 0.1]
+      subsample: [0.8, 1.0]
+
+  lstm:
+    # Three folds rather than five: every candidate here is a full network fit,
+    # so the grid costs an order of magnitude more per combination than the two
+    # above and five folds would not buy enough to justify it.
+    n_splits: 3
+    grid:
+      window: [10, 20]
+      hidden_size: [32, 64]
+      num_layers: [1, 2]
+      learning_rate: [0.001, 0.005]
 
 explain:
   shap_background: 200        # rows sampled for the SHAP background set

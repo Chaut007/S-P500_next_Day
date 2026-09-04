@@ -46,6 +46,38 @@ class Fitted:
     extras: dict[str, Any] = field(default_factory=dict)
 
 
+# --- Estimator builders -----------------------------------------------------
+# Shared with src/models/tuning.py. Defining an estimator in one place and
+# searching over it in another is how a grid search ends up tuning a model that
+# is not the one finally trained.
+
+
+def build_svr(params: dict[str, Any]):
+    """SVR wrapped so that both scalers are fitted inside the caller's split.
+
+    A plain StandardScaler fitted once outside cross-validation would let every
+    fold see the mean and variance of the folds after it. Putting the feature
+    scaler in a Pipeline and the target scaler in TransformedTargetRegressor
+    makes scikit-learn refit both on each training fold.
+    """
+    from sklearn.compose import TransformedTargetRegressor
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.svm import SVR
+
+    return TransformedTargetRegressor(
+        regressor=Pipeline([("scale", StandardScaler()), ("svr", SVR(**params))]),
+        transformer=StandardScaler(),
+    )
+
+
+def build_xgboost(params: dict[str, Any], seed: int):
+    """Gradient boosted trees. No scaling: trees are invariant to it."""
+    from xgboost import XGBRegressor
+
+    return XGBRegressor(**params, random_state=seed, n_jobs=-1, tree_method="hist")
+
+
 # --- AutoGluon --------------------------------------------------------------
 
 
@@ -100,17 +132,11 @@ def fit_xgboost(
     X_train: pd.DataFrame,
     y_train: pd.Series,
     cfg: dict[str, Any],
+    params: dict[str, Any] | None = None,
 ) -> Fitted:
     """Gradient boosted trees on the raw features; no scaling needed."""
-    from xgboost import XGBRegressor
-
-    params = dict(cfg["zoo"]["xgboost"])
-    model = XGBRegressor(
-        **params,
-        random_state=cfg["project"]["random_state"],
-        n_jobs=-1,
-        tree_method="hist",
-    )
+    params = dict(params or cfg["zoo"]["xgboost"])
+    model = build_xgboost(params, cfg["project"]["random_state"])
     model.fit(X_train, y_train)
 
     return Fitted(
@@ -128,6 +154,7 @@ def fit_svr(
     X_train: pd.DataFrame,
     y_train: pd.Series,
     cfg: dict[str, Any],
+    params: dict[str, Any] | None = None,
 ) -> Fitted:
     """RBF support vector regression.
 
@@ -136,28 +163,18 @@ def fit_svr(
     trend ratios sit near zero, and the kernel is dominated by whichever column
     happens to be largest.
     """
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.svm import SVR
+    params = dict(params or cfg["zoo"]["svr"])
 
-    params = dict(cfg["zoo"]["svr"])
+    model = build_svr(params)
+    model.fit(X_train, y_train)
 
-    x_scaler = StandardScaler().fit(X_train)
-    y_scaler = StandardScaler().fit(y_train.to_numpy().reshape(-1, 1))
-
-    model = SVR(**params)
-    model.fit(x_scaler.transform(X_train), y_scaler.transform(
-        y_train.to_numpy().reshape(-1, 1)).ravel())
-
-    def predict(X: pd.DataFrame) -> np.ndarray:
-        scaled = model.predict(x_scaler.transform(X)).reshape(-1, 1)
-        return y_scaler.inverse_transform(scaled).ravel().astype("float64")
-
+    inner = model.regressor_.named_steps["svr"]
     return Fitted(
         name="SVR",
-        predict=predict,
+        predict=lambda X: model.predict(X).astype("float64"),
         train_max=float(y_train.max()),
         estimator=model,
-        extras={"n_support": int(model.n_support_.sum())},
+        extras={"n_support": int(inner.n_support_.sum())},
     )
 
 
@@ -187,6 +204,7 @@ def fit_lstm(
     X_train: pd.DataFrame,
     y_train: pd.Series,
     cfg: dict[str, Any],
+    params: dict[str, Any] | None = None,
 ) -> Fitted:
     """A two-layer LSTM predicting the index level directly.
 
@@ -200,7 +218,7 @@ def fit_lstm(
     from torch import nn
     from sklearn.preprocessing import StandardScaler
 
-    lstm_cfg = cfg["zoo"]["lstm"]
+    lstm_cfg = {**cfg["zoo"]["lstm"], **(params or {})}
     window = lstm_cfg["window"]
     seed = cfg["project"]["random_state"]
 
@@ -315,13 +333,25 @@ def fit_all(
     y_train: pd.Series,
     cfg: dict[str, Any] | None = None,
     only: list[str] | None = None,
+    params: dict[str, dict[str, Any]] | None = None,
 ) -> list[Fitted]:
-    """Fit every family and return them in a stable order."""
+    """Fit every family and return them in a stable order.
+
+    `params` maps a model name to a hyperparameter override, as written by
+    scripts/run_tuning.py. AutoGluon takes no override: it searches its own
+    model pool inside the time budget it is given.
+    """
     cfg = cfg or load_config()
     names = only or list(BUILDERS)
+    params = params or {}
 
     fitted: list[Fitted] = []
     for name in names:
-        log.info("=== Fitting %s on %d rows ===", name, len(X_train))
-        fitted.append(BUILDERS[name](X_train, y_train, cfg))
+        override = params.get(name)
+        log.info("=== Fitting %s on %d rows%s ===", name, len(X_train),
+                 f" | tuned: {override}" if override else "")
+        if name == "AutoGluon":
+            fitted.append(BUILDERS[name](X_train, y_train, cfg))
+        else:
+            fitted.append(BUILDERS[name](X_train, y_train, cfg, override))
     return fitted
