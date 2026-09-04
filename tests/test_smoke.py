@@ -242,6 +242,46 @@ def test_gap_separates_train_from_validation(calendar, cfg):
         assert fold.valid_idx.min() - fold.train_idx.max() > gap
 
 
+# --- Partial runs -----------------------------------------------------------
+
+
+def test_partial_run_keeps_the_other_models(tmp_path):
+    """`--models XGBoost` must not erase the rest of a four-model report.
+
+    Writing a partial run straight over the file silently shrinks every
+    downstream table to whichever subset ran last.
+    """
+    from scripts.run_models import merge_by_model
+
+    path = tmp_path / "model_scores.parquet"
+    full = pd.DataFrame({
+        "model": ["AutoGluon", "LSTM", "XGBoost", "SVR"],
+        "mae": [940.8, 978.3, 1147.2, 2181.9],
+    })
+    full.to_parquet(path, index=False)
+
+    rerun = pd.DataFrame({"model": ["XGBoost"], "mae": [1087.2]})
+    merged = merge_by_model(rerun, path)
+
+    assert set(merged["model"]) == set(full["model"]), "models were dropped"
+    assert len(merged) == 4, "rows were duplicated or lost"
+
+    # The rerun value wins, the untouched ones survive unchanged.
+    by_model = merged.set_index("model")["mae"]
+    assert by_model["XGBoost"] == pytest.approx(1087.2)
+    assert by_model["AutoGluon"] == pytest.approx(940.8)
+
+
+def test_merge_by_model_handles_a_missing_file(tmp_path):
+    """The first run has nothing to merge with and must not fail."""
+    from scripts.run_models import merge_by_model
+
+    fresh = pd.DataFrame({"model": ["SVR"], "mae": [1.0]})
+    merged = merge_by_model(fresh, tmp_path / "does_not_exist.parquet")
+
+    pd.testing.assert_frame_equal(merged, fresh)
+
+
 # --- Metrics ----------------------------------------------------------------
 
 

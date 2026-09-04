@@ -52,6 +52,22 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def merge_by_model(fresh: pd.DataFrame, path: Path) -> pd.DataFrame:
+    """Keep rows for models this run did not touch.
+
+    Running `--models XGBoost` would otherwise replace a complete four-model
+    report with a one-model one, and the dashboard's before/after table would
+    quietly shrink to whatever the last partial run happened to cover.
+    """
+    if not path.exists():
+        return fresh
+    previous = load_table(path)
+    if "model" not in previous.columns:
+        return fresh
+    kept = previous[~previous["model"].isin(fresh["model"].unique())]
+    return pd.concat([kept, fresh], ignore_index=True)
+
+
 def load_frame(args: argparse.Namespace, cfg: dict) -> tuple[pd.DataFrame, list[str], list[str]]:
     """Return (table, trend_cols, macro_cols), rebuilding only when asked."""
     if args.rebuild or args.force_download or not Path(DATASET_PATH).exists():
@@ -142,9 +158,19 @@ def main() -> int:
     # before/after comparison survives; overwriting would leave nothing to
     # compare the tuned numbers against.
     suffix = "_tuned" if tuned else ""
-    save_table(scores, REPORTS_DIR / f"model_scores{suffix}.parquet")
-    save_table(pd.concat(prediction_frames, ignore_index=True),
-               REPORTS_DIR / f"model_predictions{suffix}.parquet")
+    scores_path = REPORTS_DIR / f"model_scores{suffix}.parquet"
+    predictions_path = REPORTS_DIR / f"model_predictions{suffix}.parquet"
+
+    scores = (
+        merge_by_model(scores, scores_path)
+        .sort_values("mae").reset_index(drop=True)
+    )
+    predictions = merge_by_model(
+        pd.concat(prediction_frames, ignore_index=True), predictions_path
+    )
+
+    save_table(scores, scores_path)
+    save_table(predictions, predictions_path)
 
     log.info("Test scores (best MAE first):\n%s",
              scores[["model", "mae", "rmse", "mape", "r2", "skill_mae",
@@ -163,8 +189,11 @@ def main() -> int:
         for model in fitted
     ]
     if importances:
-        save_table(pd.concat(importances, ignore_index=True),
-                   REPORTS_DIR / f"feature_importance{suffix}.parquet")
+        importance_path = REPORTS_DIR / f"feature_importance{suffix}.parquet"
+        save_table(
+            merge_by_model(pd.concat(importances, ignore_index=True), importance_path),
+            importance_path,
+        )
 
     tree = next((m for m in fitted if m.name == "XGBoost"), None)
     if tree is None:

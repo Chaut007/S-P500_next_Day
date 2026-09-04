@@ -63,18 +63,23 @@ def _sklearn_search(
     search.fit(X_train, y_train)
     elapsed = time.perf_counter() - started
 
+    # SVR is searched through a TransformedTargetRegressor wrapping a Pipeline,
+    # so its keys come back as `regressor__svr__C`. The prefixes address the
+    # nesting and mean nothing in a report, so they are stripped everywhere the
+    # parameters are shown, not only on the winner.
+    def strip(params: dict[str, Any]) -> dict[str, Any]:
+        return {k.split("__")[-1]: v for k, v in params.items()}
+
     results = pd.DataFrame(search.cv_results_)
     table = pd.DataFrame({
         "model": name,
-        "params": results["params"].astype(str),
+        "params": results["params"].map(lambda p: str(strip(p))),
         "cv_mae": -results["mean_test_score"],
         "cv_mae_std": results["std_test_score"],
         "rank": results["rank_test_score"],
     }).sort_values("cv_mae").reset_index(drop=True)
 
-    # GridSearchCV strips the pipeline prefixes only on the estimator, not on
-    # the reported params, so they are cleaned here for the report.
-    best = {k.split("__")[-1]: v for k, v in search.best_params_.items()}
+    best = strip(search.best_params_)
 
     log.info("%s | best CV MAE %.3f in %.0fs | %s",
              name, table["cv_mae"].iloc[0], elapsed, best)
