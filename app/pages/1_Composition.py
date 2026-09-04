@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
-from lib import page_config, processed, require
+from lib import RANK_COLORS, chart, page_config, processed, require, stepped_scale, table
 
 page_config("Composition")
 
@@ -36,7 +37,7 @@ long = top10.melt(
 ).dropna(subset=["ticker"])
 long["rank"] = long["slot"].str.removeprefix("name_").astype(int)
 
-# Weekly sampling keeps the scatter readable; daily would be ~25,000 points of
+# Weekly sampling keeps the chart readable; daily would be ~25,000 cells of
 # which most are visually identical.
 weekly = long[long["date"].dt.dayofweek == 2]
 
@@ -44,23 +45,54 @@ order = (
     weekly.groupby("ticker")["rank"].mean().sort_values().index.tolist()
 )
 
-fig = px.scatter(
-    weekly,
-    x="date",
-    y="ticker",
-    color="rank",
-    color_continuous_scale="Viridis_r",
-    category_orders={"ticker": order},
-    labels={"rank": "Rank", "date": "", "ticker": ""},
-    height=max(420, 22 * len(order)),
+# A heatmap rather than a scatter. As a scatter this was a field of round
+# markers that overlapped into a mottled band, drawn in trace order so a later
+# rank painted over an earlier one, and the rank was read off a continuous
+# colour bar squeezed against the right edge -- narrow enough that its "10"
+# clipped to "1". A grid of one cell per company-week gives flat bands, leaves
+# the weeks out of the block genuinely empty, and frees the scale to sit
+# horizontally above the plot where nothing can crop it.
+grid = weekly.pivot_table(
+    index="ticker", columns="date", values="rank", aggfunc="min"
+).reindex(order)
+
+fig = go.Figure(
+    go.Heatmap(
+        z=grid.to_numpy(),
+        x=grid.columns,
+        y=grid.index,
+        colorscale=stepped_scale(RANK_COLORS),
+        zmin=0.5,
+        zmax=10.5,
+        ygap=4,
+        hovertemplate="<b>%{y}</b> — rank %{z:.0f}<br>%{x|%-d %b %Y}<extra></extra>",
+        colorbar=dict(
+            orientation="h",
+            x=0, xanchor="left", y=1.0, yanchor="bottom",
+            thickness=10, len=0.62, outlinewidth=0, ticks="",
+            tickvals=list(range(1, 11)),
+            title=dict(text="Rank held that week — 1 is the largest company",
+                       side="top"),
+        ),
+    )
 )
-fig.update_traces(marker=dict(size=5, opacity=0.85))
-fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
-st.plotly_chart(fig, use_container_width=True)
+fig.update_layout(
+    height=max(440, 26 * len(order)),
+    # automargin on both axes: the ticker names and the year labels sit outside
+    # the plot area and a zero margin crops them away entirely.
+    margin=dict(l=0, r=0, t=64, b=0),
+    xaxis=dict(range=[grid.columns.min(), grid.columns.max()],
+               showgrid=False, automargin=True),
+    yaxis=dict(autorange="reversed", showgrid=False,
+               automargin=True, ticksuffix="  "),
+)
+chart(fig)
 
 st.caption(
-    "Each row is a company; a mark means it held a top-ten slot that week. "
-    "Darker means a higher rank. Gaps are the churn the design is built to absorb."
+    "Each row is a company and each cell one week it held a top-ten slot. Warm "
+    "colours are the top of the leaderboard, cool ones the bottom; blank means "
+    "out of the block entirely. Rows run from the best average rank down, so "
+    "the ragged lower half is the churn the design is built to absorb."
 )
 
 # --- Entries and exits ------------------------------------------------------
@@ -78,12 +110,11 @@ left, right = st.columns([2, 1])
 
 with left:
     st.subheader("Time spent in the top ten")
-    st.dataframe(
+    table(
         first_last.rename(columns={
             "ticker": "Ticker", "first_seen": "First seen",
             "last_seen": "Last seen", "days": "Days in top 10",
         }),
-        use_container_width=True,
         hide_index=True,
         height=380,
     )
@@ -175,12 +206,15 @@ if not tail.empty:
         ignore_index=True,
     )
 
-pie_left, pie_right = st.columns([3, 2])
+# An even split rather than 3:2. The donut needs room for a legend of full
+# company names and the table beside it has three columns of its own; at 3:2
+# both were squeezed.
+pie_left, pie_right = st.columns([1, 1])
 
 with pie_left:
     fig = px.pie(
         major, values="share", names="company", hole=0.52,
-        height=440,
+        height=520,
     )
     fig.update_traces(
         textposition="inside",
@@ -194,20 +228,26 @@ with pie_left:
         marker=dict(line=dict(color="rgba(0,0,0,0.35)", width=1)),
         sort=False,
     )
+    # A vertical legend outside the plot area gets whatever width is left,
+    # which in a narrow column truncated the labels: both Alphabet share
+    # classes arrived as "Alphabet Inc. (Cla..." and became indistinguishable.
+    # A horizontal legend below wraps onto more rows instead of clipping, but
+    # it is not counted when the domain is laid out, so the bottom margin has
+    # to reserve its rows explicitly or the last one is cropped.
     fig.update_layout(
-        margin=dict(l=0, r=0, t=10, b=0),
-        legend=dict(orientation="v", x=1.02, y=0.5),
+        margin=dict(l=0, r=0, t=10, b=118),
+        legend=dict(orientation="h", x=0.5, xanchor="center",
+                    y=-0.02, yanchor="top"),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    chart(fig)
 
 with pie_right:
-    st.dataframe(
+    table(
         shares.assign(share=shares["share"] * 100).rename(columns={
             "company": "Company", "share": "Share %", "mcap": "USD bn-days",
         })[["Company", "Share %", "USD bn-days"]].style.format({
             "Share %": "{:.2f}", "USD bn-days": "{:,.0f}",
         }),
-        use_container_width=True,
         hide_index=True,
         height=440,
     )
@@ -235,18 +275,27 @@ if require(concentration, "python -m scripts.run_data"):
     tab1, tab2 = st.tabs(["Share of the leader", "Combined size"])
 
     with tab1:
+        # The legend takes its text from the column names, which left the
+        # reader looking up share_1 and hhi in the caption below.
+        series_names = {
+            "share_1": "Leader's share",
+            "share_top3": "Top three combined",
+            "hhi": "Herfindahl index",
+        }
         fig = px.line(
-            concentration, x="date", y=["share_1", "share_top3", "hhi"],
+            concentration, x="date", y=list(series_names),
             labels={"value": "", "date": "", "variable": ""},
             height=420,
         )
+        fig.for_each_trace(lambda t: t.update(name=series_names[t.name]))
         fig.update_layout(margin=dict(l=0, r=0, t=10, b=0),
                           legend=dict(orientation="h", y=1.08))
-        st.plotly_chart(fig, use_container_width=True)
+        chart(fig)
         st.caption(
-            "`share_1` is the leader's weight inside the top ten, `hhi` the "
-            "Herfindahl index of the block. Both are computed from the top ten "
-            "alone, so they stay inside the scope of the research question."
+            "All three are computed from the top ten alone, so they stay inside "
+            "the scope of the research question: the leader's weight *within* "
+            "the block, the top three combined, and the Herfindahl index of the "
+            "ten shares."
         )
 
     with tab2:
@@ -256,7 +305,7 @@ if require(concentration, "python -m scripts.run_data"):
             height=420,
         )
         fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
-        st.plotly_chart(fig, use_container_width=True)
+        chart(fig)
         st.caption(
             "Combined market cap of the top ten. This series is the `S(t)` that "
             "the momentum and moving-average features in set B are built from."

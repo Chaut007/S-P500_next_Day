@@ -17,6 +17,23 @@
         "false"
       ],
       "port": 8501
+    },
+    {
+      "name": "dashboard-alt",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "streamlit",
+        "run",
+        "app/Home.py",
+        "--server.port",
+        "8502",
+        "--server.headless",
+        "true",
+        "--browser.gatherUsageStats",
+        "false"
+      ],
+      "port": 8502
     }
   ]
 }

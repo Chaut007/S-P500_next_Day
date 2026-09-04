@@ -96,8 +96,8 @@ explain:
 dashboard:
   race_freq: "ME"             # month-end frames; daily would be ~2515 frames
   race_top_n: 10
-  race_fps: 10
-  race_seconds_per_frame: 0.1
+  # race_fps and race_seconds_per_frame went with the pre-rendered MP4. The
+  # leaderboard is a Plotly animation now, so the reader sets the pace.
 
 logging:
   level: INFO

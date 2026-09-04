@@ -48,7 +48,7 @@ Always run from the project root; the modules import as `src.*`.
 
 ```powershell
 python -m scripts.run_data          # download, rank, assemble the dataset
-python -m scripts.build_race        # render the home-page animation
+python -m scripts.build_logos       # company marks for the home-page leaderboard
 python -m scripts.run_train         # expanding-window ablation A / B / C
 python -m scripts.run_experiments   # explanatory power and weight vs importance
 python -m scripts.run_models        # four models on the 80/20 split + SHAP
@@ -341,9 +341,17 @@ config/config.yaml       every tunable value; nothing is hard-coded in src/
 data/raw/                cached downloads
 data/processed/          dataset, rankings, concentration -- what the app reads
 reports/                 metrics, predictions, importance
-assets/top10_race.mp4    home-page animation
+app/static/logos/        company marks, served to the home-page leaderboard
 logs/                    rotating run logs
+```
 
+The marks come from [Simple Icons](https://simpleicons.org) (CC0) via
+`scripts.build_logos`, recoloured to the dashboard's foreground. Sixteen of the
+twenty-three companies that have held a top-ten slot have a glyph there; the
+rest are identified by ticker alone. The marks are trademarks of their owners
+and appear here only to identify the companies under study.
+
+```
 src/
   config.py              paths and config loading
   logger.py              console + rotating file logger
@@ -385,7 +393,7 @@ Change `config/config.yaml` only.
 | AutoGluon pool / time budget | `model.included_model_types`, `model.time_limit` |
 | SVR / XGBoost / LSTM settings | `zoo.svr`, `zoo.xgboost`, `zoo.lstm` |
 | SHAP sample sizes | `explain.shap_sample`, `explain.shap_background` |
-| Animation smoothness | `dashboard.race_freq`, `race_fps` |
+| Leaderboard frames / bars | `dashboard.race_freq`, `dashboard.race_top_n` |
 
 ---
 

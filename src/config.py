@@ -30,6 +30,13 @@ REPORTS_DIR = PROJECT_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
 ASSETS_DIR = PROJECT_ROOT / "assets"
 
+# Streamlit serves this folder at /app/static/ when server.enableStaticServing is
+# on, and it only looks for it beside the entrypoint script. The logo marks live
+# there so the animated leaderboard can reference them by a short URL instead of
+# carrying a base64 copy in each of its 120 frames.
+STATIC_DIR = PROJECT_ROOT / "app" / "static"
+LOGOS_DIR = STATIC_DIR / "logos"
+
 load_dotenv(PROJECT_ROOT / ".env")
 
 

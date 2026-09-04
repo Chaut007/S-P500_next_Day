@@ -6,8 +6,18 @@ secondaryBackgroundColor = "#11172A"
 textColor = "#EDF0F7"
 font = "sans serif"
 
+[client]
+# This is a reader for committed artifacts, not something anyone deploys from
+# the browser, so the Deploy button is noise. It also overlapped the content
+# scrolling beneath the transparent header.
+toolbarMode = "minimal"
+
 [server]
 headless = true
+# Serves app/static/ at /app/static/. The leaderboard's company marks are
+# referenced by URL from 120 animation frames; inlining them as data URIs would
+# put a base64 copy in every frame and cost megabytes.
+enableStaticServing = true
 
 [browser]
 gatherUsageStats = false

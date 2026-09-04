@@ -7,7 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from lib import gradient_row, page_config, report, require
+from lib import chart, gradient_row, page_config, report, require, table
 
 page_config("Explanatory power")
 
@@ -84,18 +84,17 @@ with left:
     )
     fig.update_yaxes(range=[0.8, 1.0])
     fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
-    st.plotly_chart(fig, use_container_width=True)
+    chart(fig)
     st.caption("Axis starts at 0.8 so the differences between years are visible.")
 
 with right:
-    st.dataframe(
+    table(
         periods[["year", "n", "r2", "mape", "index_over_block"]].rename(columns={
             "year": "Year", "n": "Days", "r2": "R²",
             "mape": "MAPE %", "index_over_block": "Index ÷ block",
         }).style.format({
             "R²": "{:.4f}", "MAPE %": "{:.3f}", "Index ÷ block": "{:.4f}",
         }),
-        use_container_width=True,
         hide_index=True,
         height=380,
     )
@@ -118,7 +117,7 @@ fig.update_layout(
     yaxis_title="Index level ÷ block market cap",
     margin=dict(l=0, r=0, t=10, b=0),
 )
-st.plotly_chart(fig, use_container_width=True)
+chart(fig)
 
 st.markdown(
     """
@@ -165,7 +164,7 @@ if rolling is not None and not rolling.empty:
         height=360,
     )
     fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
-    st.plotly_chart(fig, use_container_width=True)
+    chart(fig)
 
     trough = rolling.loc[rolling["r2"].idxmin()]
     st.caption(

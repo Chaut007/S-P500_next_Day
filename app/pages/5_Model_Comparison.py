@@ -7,7 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from lib import gradient_row, page_config, report, require
+from lib import chart, gradient_row, page_config, report, require, table
 
 page_config("Model comparison")
 
@@ -67,13 +67,12 @@ display = scores[[c for c in columns if c in scores.columns]].rename(columns={
     "directional_accuracy": "Directional acc.", "shortfall": "Shortfall",
 })
 
-st.dataframe(
+table(
     display.style.format({
         "MAE": "{:,.1f}", "RMSE": "{:,.1f}", "MAPE %": "{:.2f}",
         "R²": "{:.3f}", "Skill (MAE)": "{:.1f}",
         "Directional acc.": "{:.3f}", "Shortfall": "{:,.0f}",
     }),
-    use_container_width=True,
     hide_index=True,
 )
 
@@ -94,7 +93,7 @@ with left:
     )
     fig.update_layout(margin=dict(l=0, r=0, t=10, b=0),
                       yaxis=dict(categoryorder="total descending"))
-    st.plotly_chart(fig, use_container_width=True)
+    chart(fig)
 
 with right:
     fig = px.bar(
@@ -105,7 +104,7 @@ with right:
     fig.add_vline(x=0, line_color="#9BA4BE")
     fig.update_layout(margin=dict(l=0, r=0, t=10, b=0),
                       yaxis=dict(categoryorder="total descending"))
-    st.plotly_chart(fig, use_container_width=True)
+    chart(fig)
 
 st.divider()
 
@@ -156,7 +155,7 @@ if require(predictions, "python -m scripts.run_models"):
             yaxis_title="Index level",
             legend=dict(orientation="h", y=1.1),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        chart(fig)
 
         st.caption(
             "The dashed pink line is the ceiling. Everything the tree and kernel "

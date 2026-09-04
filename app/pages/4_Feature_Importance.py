@@ -8,7 +8,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from lib import page_config, report, require
+from lib import chart, page_config, report, require, table
 
 page_config("Feature importance")
 
@@ -51,15 +51,14 @@ with left:
         height=460,
     )
     fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
-    st.plotly_chart(fig, use_container_width=True)
+    chart(fig)
 
 with right:
-    st.dataframe(
+    table(
         shap_summary[["feature", "mean_abs_shap", "mean_shap"]].rename(columns={
             "feature": "Feature", "mean_abs_shap": "Mean |SHAP|",
             "mean_shap": "Mean SHAP",
         }).style.format({"Mean |SHAP|": "{:,.1f}", "Mean SHAP": "{:+,.1f}"}),
-        use_container_width=True,
         hide_index=True,
         height=460,
     )
@@ -129,7 +128,7 @@ if shap_long is not None and not shap_long.empty:
         yaxis=dict(tickvals=list(positions.values()),
                    ticktext=list(positions.keys()), title=""),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    chart(fig)
 
     st.caption(
         "Each dot is one test day. Pink means that day had a high value for the "
@@ -159,7 +158,7 @@ if shap_long is not None and not shap_long.empty:
         yaxis_title="SHAP contribution (index points)",
         margin=dict(l=0, r=0, t=10, b=0),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    chart(fig)
 
     st.caption(
         "A rising line means the model reads a larger value for this feature as "
@@ -205,7 +204,7 @@ fig = px.bar(
 )
 fig.add_vline(x=0, line_color="#9BA4BE")
 fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
-st.plotly_chart(fig, use_container_width=True)
+chart(fig)
 
 st.caption(
     "SVR is the only model with a visible response, and only because its RBF "
@@ -215,7 +214,7 @@ st.caption(
 )
 
 with st.expander("Full permutation results"):
-    st.dataframe(
+    table(
         importance[["model", "feature", "baseline_mae", "permuted_mae",
                     "importance", "importance_pct", "std"]].rename(columns={
             "model": "Model", "feature": "Feature", "baseline_mae": "Baseline MAE",
@@ -225,6 +224,5 @@ with st.expander("Full permutation results"):
             "Baseline MAE": "{:,.1f}", "Shuffled MAE": "{:,.1f}",
             "Δ MAE": "{:+,.2f}", "Δ %": "{:+.2f}", "SD": "{:,.2f}",
         }),
-        use_container_width=True,
         hide_index=True,
     )

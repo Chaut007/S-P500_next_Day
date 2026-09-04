@@ -7,7 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from lib import PALETTE, page_config, report, require
+from lib import PALETTE, chart, page_config, report, require, table
 
 page_config("Model results")
 
@@ -35,13 +35,12 @@ if summary is not None and not summary.empty:
         "mspe": "MSPE %", "r2": "R²", "skill_mae": "Skill (MAE)",
         "directional_accuracy": "Directional acc.",
     })
-    st.dataframe(
+    table(
         display.style.format({
             "MAE": "{:.2f}", "MAPE %": "{:.3f}", "MSPE %": "{:.5f}",
             "R²": "{:.5f}", "Skill (MAE)": "{:.3f}",
             "Directional acc.": "{:.3f}",
         }),
-        use_container_width=True,
         hide_index=True,
     )
 
@@ -69,7 +68,7 @@ fig = px.bar(
 fig.add_hline(y=1.0, line_dash="dash", line_color="#E45756",
               annotation_text="naive forecast", annotation_position="top left")
 fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
-st.plotly_chart(fig, use_container_width=True)
+chart(fig)
 
 st.caption(
     "Bars below the dashed line beat doing nothing. Folds validating years that "
@@ -85,10 +84,23 @@ st.divider()
 
 st.subheader("All metrics by fold")
 
+# The dropdown used to list the raw column names, so choosing between mspe and
+# skill_mae meant already knowing what they were.
+METRIC_LABELS = {
+    "mae": "MAE — mean absolute error, index points",
+    "rmse": "RMSE — root mean squared error, index points",
+    "mape": "MAPE — mean absolute percentage error",
+    "mspe": "MSPE — mean squared percentage error",
+    "r2": "R² — variance explained",
+    "skill_mae": "Skill — error ÷ naive forecast error",
+    "directional_accuracy": "Directional accuracy — share of days called right",
+}
+
 metric_choice = st.selectbox(
     "Metric",
-    ["mae", "mape", "mspe", "r2", "rmse", "skill_mae", "directional_accuracy"],
+    list(METRIC_LABELS),
     index=0,
+    format_func=METRIC_LABELS.get,
 )
 
 pivot = metrics.pivot_table(
@@ -97,26 +109,26 @@ pivot = metrics.pivot_table(
 col_left, col_right = st.columns([1, 1])
 
 with col_left:
-    st.dataframe(pivot.style.format("{:.5f}"), use_container_width=True)
+    table(pivot.style.format("{:.5f}"))
 
 with col_right:
     fig = px.line(
         metrics.sort_values("year"),
         x="year", y=metric_choice, color="feature_set", markers=True,
         color_discrete_map=PALETTE,
-        labels={metric_choice: metric_choice.upper(), "year": "Validation year",
-                "feature_set": "Set"},
+        labels={metric_choice: METRIC_LABELS[metric_choice].split(" — ")[0],
+                "year": "Validation year", "feature_set": "Set"},
         height=330,
     )
     fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
-    st.plotly_chart(fig, use_container_width=True)
+    chart(fig)
 
 with st.expander("Per-fold detail, including the winning model"):
     columns = [c for c in ["feature_set", "fold", "year", "n_train", "n_valid",
                            "best_model", "mae", "mape", "mspe", "r2",
                            "baseline_mae", "skill_mae", "directional_accuracy"]
                if c in metrics.columns]
-    st.dataframe(metrics[columns], use_container_width=True, hide_index=True)
+    table(metrics[columns], hide_index=True)
 
 st.divider()
 
@@ -160,7 +172,7 @@ if require(predictions, "python -m scripts.run_train"):
             yaxis_title="Index level",
             legend=dict(orientation="h", y=1.08),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        chart(fig)
 
         error = subset["predicted"] - subset["actual"]
         st.caption(

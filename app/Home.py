@@ -9,7 +9,9 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from lib import asset, gradient_row, page_config, processed, report
+from lib import chart, gradient_row, page_config, processed, report, require
+from race import leaderboard_figure
+from src.config import load_config
 
 page_config("Home")
 
@@ -77,17 +79,25 @@ st.divider()
 
 st.subheader("Ten years of the leaderboard")
 
-video = asset("top10_race.mp4")
-if video is not None:
-    st.video(str(video))
+caps = processed("mcap_daily.parquet")
+universe = processed("universe.parquet")
+
+if require(caps, "python -m scripts.run_data") and universe is not None:
+    caps = caps.copy()
+    caps["date"] = pd.to_datetime(caps["date"])
+    dashboard_cfg = load_config()["dashboard"]
+    chart(leaderboard_figure(
+        caps.set_index("date").sort_index(),
+        universe.set_index("ticker"),
+        top_n=dashboard_cfg["race_top_n"],
+        freq=dashboard_cfg["race_freq"],
+    ))
     st.caption(
-        "Month-end market capitalisation, interpolated between frames. "
-        "Watch the energy and industrial names slide out while the bars at the "
-        "top pull further away from the field."
+        "Month-end market capitalisation, coloured by sector. Drag the slider "
+        "to any month, or press play. Watch the orange and red of energy and "
+        "industrials drain out of the block while violet technology fills it, "
+        "and the bars at the top pull further away from the field."
     )
-else:
-    st.info("Animation not built yet. Run `python -m scripts.build_race` "
-            "after `python -m scripts.run_data`.")
 
 st.divider()
 
@@ -135,8 +145,9 @@ st.divider()
 st.subheader("Pipeline")
 st.code(
     """python -m scripts.run_data          # download, rank, assemble
-python -m scripts.build_race        # render the animation above
+python -m scripts.build_logos       # company marks for the leaderboard above
 python -m scripts.run_train         # expanding-window ablation A / B / C
-python -m scripts.run_experiments   # N sweep and weight vs importance""",
+python -m scripts.run_experiments   # N sweep and weight vs importance
+python -m scripts.run_models        # four model families on one 80/20 split""",
     language="bash",
 )

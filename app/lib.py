@@ -27,7 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.config import ASSETS_DIR, PROCESSED_DIR, REPORTS_DIR  # noqa: E402
+from src.config import PROCESSED_DIR, REPORTS_DIR  # noqa: E402
 
 # --- Palette ---------------------------------------------------------------
 
@@ -63,6 +63,54 @@ GRADIENTS = [
 
 # Categorical colours for series, tuned to read on the dark background.
 SERIES = ["#A78BFA", "#F472B6", "#22D3EE", "#34D399", "#FBBF24", "#FB7185"]
+
+# One colour per rank slot, warm at the top of the leaderboard and cool at the
+# bottom. Rank is a ten-value ordinal, so a continuous colour bar asks the eye
+# to interpolate a scale it cannot read precisely; ten fixed steps let a reader
+# name the rank from the colour.
+RANK_COLORS = [
+    "#FDE68A",  # 1
+    "#FCD34D",  # 2
+    "#FB923C",  # 3
+    "#F472B6",  # 4
+    "#EC4899",  # 5
+    "#C084FC",  # 6
+    "#A78BFA",  # 7
+    "#818CF8",  # 8
+    "#60A5FA",  # 9
+    "#38BDF8",  # 10
+]
+
+
+# Sector colours for the leaderboard. Colouring the bars by sector rather than
+# giving each company an arbitrary hue is what makes the animation argue its
+# point: the energy and industrial names leaving the block, and the violet of
+# technology taking it over, are visible without reading a single label.
+SECTOR_COLORS = {
+    "Information Technology": "#A78BFA",
+    "Communication Services": "#60A5FA",
+    "Consumer Discretionary": "#22D3EE",
+    "Financials": "#34D399",
+    "Health Care": "#F472B6",
+    "Consumer Staples": "#FBBF24",
+    "Energy": "#FB923C",
+    "Industrials": "#FB7185",
+}
+SECTOR_FALLBACK = "#8B96B4"
+
+
+def stepped_scale(colors: list[str]) -> list[list]:
+    """Turn a colour list into a Plotly colorscale with hard edges.
+
+    Repeating each stop at both ends of its band stops Plotly interpolating
+    between them, which is what keeps a rank band one flat colour.
+    """
+    n = len(colors)
+    scale: list[list] = []
+    for i, color in enumerate(colors):
+        scale.append([i / n, color])
+        scale.append([(i + 1) / n, color])
+    return scale
 
 PALETTE = {
     "A": "#A78BFA",
@@ -136,7 +184,25 @@ _CSS_BODY = """
 }
 
 [data-testid="stHeader"] { background: transparent; }
-[data-testid="stToolbar"] { right: 12px; }
+
+/* The header keeps its default absolute position and sits above the scrolling
+   content, so clearing its background let table headers and cards scroll
+   underneath the toolbar and print through it -- "Deploy" landed on top of a
+   column heading. config.toml turns the toolbar off, which is the actual fix;
+   this gives it a surface of its own for the cases where it comes back, such
+   as a run started outside the project root, so that it masks what passes
+   beneath rather than laying a band across the floating panel. */
+[data-testid="stToolbar"] {
+  right: 12px;
+  top: 8px;
+  padding: 3px 5px;
+  border-radius: 12px;
+  background: rgba(17, 23, 42, 0.82);
+  backdrop-filter: blur(10px) saturate(130%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 26px -18px rgba(0, 0, 0, 0.9);
+}
 
 /* --- Floating application window ---------------------------------------- */
 
@@ -157,6 +223,20 @@ _CSS_BODY = """
 @keyframes sp-rise {
   from { opacity: 0; transform: translateY(14px); }
   to   { opacity: 1; transform: none; }
+}
+
+/* On a phone the panel runs edge to edge, so its 44px of side padding is
+   spending a quarter of the screen on nothing and the rounded corners fall
+   outside the viewport. Charts are the tightest thing on the page and get the
+   width back. */
+@media (max-width: 640px) {
+  [data-testid="stMainBlockContainer"] {
+    padding: 1.5rem 1.1rem 2rem;
+    margin-top: 0.5rem;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
 }
 
 /* --- Sidebar as application chrome --------------------------------------- */
@@ -249,6 +329,18 @@ _CSS_BODY = """
   text-transform: uppercase;
   letter-spacing: 0.09em;
 }
+
+/* Streamlit clips the label to one line. Upper-casing it and opening the
+   tracking widens it by roughly a third, which is enough to push labels of
+   ordinary length past the box: "Present every single day" arrived as
+   "PRESENT EVERY SI...". Let it wrap instead -- the card has room in height. */
+[data-testid="stMetricLabel"],
+[data-testid="stMetricLabel"] > div {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  line-height: 1.35;
+}
 [data-testid="stMetricValue"] {
   font-size: 1.95rem !important;
   font-weight: 800;
@@ -328,13 +420,28 @@ _CSS_BODY = """
 
 /* --- Charts, tables, callouts -------------------------------------------- */
 
-[data-testid="stPlotlyChart"] {
+/* The panel goes on the element container, not on the chart itself. Plotly
+   writes its measured size onto [data-testid="stPlotlyChart"], so padding
+   there is taken out of the chart rather than placed around it and every
+   figure hung past the panel -- which is how a legend row came to print over
+   the bottom edge. Padding one level up is simply inset instead. The figure
+   ends up about 30px shorter than the height it asks for, which is a fair
+   trade for the panel actually containing it. */
+[data-testid="stElementContainer"]:has([data-testid="stPlotlyChart"]) {
   background: linear-gradient(158deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.017) 100%);
   border: 1px solid var(--line);
   border-radius: 18px;
-  padding: 16px 16px 8px;
+  padding: 16px 16px 12px;
   box-shadow: 0 20px 44px -26px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
+
+/* Streamlit paints the theme's backgroundColor onto the chart's <svg> and its
+   secondaryBackgroundColor into the plot-area rect, and it does so on the
+   client after the figure is handed over -- neither theme=None nor setting
+   paper_bgcolor on the figure prevents it. Without these two rules every chart
+   lays an opaque slab over the panel above and the glass is wasted. */
+[data-testid="stPlotlyChart"] .main-svg { background: transparent !important; }
+[data-testid="stPlotlyChart"] .bglayer .bg { fill: transparent !important; }
 
 [data-testid="stDataFrame"], [data-testid="stTable"] {
   border: 1px solid var(--line);
@@ -370,17 +477,43 @@ code {
 
 /* --- Controls ------------------------------------------------------------ */
 
-.stTabs [data-baseweb="tab-list"] { gap: 6px; }
-.stTabs [data-baseweb="tab"] {
+/* Streamlit no longer marks these up with BaseWeb attributes, so the older
+   [data-baseweb="tab"] and [data-baseweb="select"] rules matched nothing and
+   both controls fell back to stock styling. The test ids and ARIA roles below
+   are what the current build actually emits. */
+
+[data-testid="stTabs"] [role="tablist"] {
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+}
+[data-testid="stTab"] {
   background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-bottom: none;
   border-radius: 11px 11px 0 0;
   padding: 9px 17px;
+  color: var(--muted);
+  font-weight: 600;
+  transition: color 0.25s var(--ease), background 0.25s var(--ease);
+}
+[data-testid="stTab"]:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
+[data-testid="stTab"][aria-selected="true"] {
+  color: #fff;
+  background: linear-gradient(180deg, rgba(124, 92, 252, 0.34), rgba(124, 92, 252, 0.12));
+  border-color: rgba(148, 122, 255, 0.34);
 }
 
-[data-baseweb="select"] > div, .stSelectbox div[data-baseweb="select"] > div {
-  background: var(--surface-2);
-  border-color: var(--line);
-  border-radius: 11px;
+[data-testid="stSelectbox"] div[role="group"],
+[data-testid="stMultiSelect"] div[role="group"] {
+  background: var(--surface-2) !important;
+  border: 1px solid var(--line-2) !important;
+  border-radius: 11px !important;
+  transition: border-color 0.25s var(--ease), box-shadow 0.25s var(--ease);
+}
+[data-testid="stSelectbox"] div[role="group"]:focus-within,
+[data-testid="stMultiSelect"] div[role="group"]:focus-within {
+  border-color: rgba(148, 122, 255, 0.55) !important;
+  box-shadow: 0 0 0 3px rgba(124, 92, 252, 0.18);
 }
 
 .stButton > button, [data-testid="stBaseButton-secondary"] {
@@ -457,17 +590,40 @@ def report(name: str) -> pd.DataFrame | None:
     return read_table(str(REPORTS_DIR / name))
 
 
-def asset(name: str) -> Path | None:
-    path = ASSETS_DIR / name
-    return path if path.exists() else None
-
-
 def require(df: pd.DataFrame | None, missing_hint: str) -> bool:
     """Show a build instruction instead of an empty page when data is absent."""
     if df is None or df.empty:
         st.info(f"Not built yet. Run `{missing_hint}` from the project root.")
         return False
     return True
+
+
+# --- Rendering -------------------------------------------------------------
+
+
+def chart(fig, **kwargs) -> None:
+    """Render a Plotly figure full width on the app's own template.
+
+    Two things have to be undone. st.plotly_chart defaults to theme="streamlit",
+    which merges Streamlit's own theme over the figure and wins on everything
+    but the colorway, so theme=None is what actually puts sp555 in charge.
+
+    The backgrounds cannot be won here at all: Streamlit's frontend writes
+    config.toml's backgroundColor and secondaryBackgroundColor onto the rendered
+    chart whatever the figure or the template asks for, which left an opaque
+    #0B1020 rectangle inside every translucent chart panel. Clearing that is the
+    one job left to CSS -- see the stPlotlyChart rules in the theme.
+    """
+    st.plotly_chart(fig, theme=None, width="stretch", **kwargs)
+
+
+def table(data, **kwargs) -> None:
+    """Render a dataframe full width.
+
+    Exists so the width argument is written once: use_container_width is
+    deprecated and due for removal.
+    """
+    st.dataframe(data, width="stretch", **kwargs)
 
 
 # --- Layout helpers --------------------------------------------------------

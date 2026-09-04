@@ -5,7 +5,7 @@ from __future__ import annotations
 import plotly.express as px
 import streamlit as st
 
-from lib import page_config, report, require
+from lib import chart, page_config, report, require, table
 
 page_config("Weight vs importance")
 
@@ -40,12 +40,11 @@ if stats is not None and not stats.empty:
             "fold": "Fold", "spearman_rho": "Spearman ρ",
             "spearman_p": "p", "pearson_r": "Pearson r", "n_slots": "Slots",
         })
-        st.dataframe(
+        table(
             display.style.format({
                 "Spearman ρ": "{:.3f}", "p": "{:.4f}",
                 "Pearson r": "{:.3f}", "Slots": "{:.0f}",
             }),
-            use_container_width=True,
             hide_index=True,
         )
 
@@ -104,7 +103,7 @@ fig.add_annotation(x=limit * 0.82, y=limit * 0.9,
                    text="importance = weight", showarrow=False,
                    font=dict(color="#999999"))
 fig.update_layout(margin=dict(l=0, r=0, t=10, b=0))
-st.plotly_chart(fig, use_container_width=True)
+chart(fig)
 
 st.caption(
     "Points above the dashed line matter more to the model than their size "
@@ -131,16 +130,15 @@ fig = px.bar(
     height=420,
 )
 fig.update_layout(margin=dict(l=0, r=0, t=10, b=0), coloraxis_showscale=False)
-st.plotly_chart(fig, use_container_width=True)
+chart(fig)
 
 with st.expander("Underlying numbers"):
-    st.dataframe(
+    table(
         gap.rename(columns={
             "feature": "Slot", "weight": "Mean weight",
             "importance_norm": "Mean importance", "gap": "Gap",
         }).style.format({
             "Mean weight": "{:.4f}", "Mean importance": "{:.4f}", "Gap": "{:+.4f}",
         }),
-        use_container_width=True,
         hide_index=True,
     )
