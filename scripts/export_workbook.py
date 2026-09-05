@@ -5,8 +5,15 @@ data/processed and the parquet artifacts under reports. That is convenient for
 the pipeline and inconvenient for anyone who just wants to read the results, so
 this writes all of them into a single workbook with a contents sheet.
 
-Nothing is recomputed. Every sheet is whatever the pipeline already wrote, so
-the workbook cannot disagree with the dashboard.
+Every sheet is whatever the pipeline already wrote, so the workbook cannot
+disagree with the dashboard. The one exception is `dataset_daily`, which joins
+the modelling table to the ticker that held each rank slot -- a join, not a
+recomputation, and the only place the two are visible side by side.
+
+The daily and the long views are both here on purpose. `dataset_daily` has one
+row per trading day and is the shape the models actually see;
+`top10_ranking_daily` has one row per company per day and is the shape you need
+to follow a single firm. Neither substitutes for the other.
 
 Run from the project root:
     python -m scripts.export_workbook
@@ -32,7 +39,7 @@ DEFAULT_OUTPUT = REPORTS_DIR / "sp555_all_tables.xlsx"
 # Sheet name -> (path, what it holds). Ordered so the workbook reads like the
 # study: source data, then the split, then results, then explanation.
 SHEETS: dict[str, tuple[Path, str]] = {
-    "top10_ranking_daily": (
+    "top10_ranking_daily": (  # noqa: E501 - see build_dataset_daily for the per-day view
         PROCESSED_DIR / "top10_ranking_daily.csv",
         "One row per company per day: rank, close price and market cap",
     ),
@@ -114,6 +121,37 @@ SHEETS: dict[str, tuple[Path, str]] = {
 MAX_SHEET_NAME = 31
 
 
+def build_dataset_daily() -> pd.DataFrame | None:
+    """One row per trading day: the modelling table plus who held each slot.
+
+    dataset.parquet carries x1..x10 as market caps but not the tickers behind
+    them, because the models never see a ticker. For reading, the two belong
+    together -- otherwise a row says the largest firm was worth 464bn without
+    saying which firm that was.
+    """
+    try:
+        dataset = load_table(PROCESSED_DIR / "dataset.parquet")
+        top10 = load_table(PROCESSED_DIR / "top10_daily.parquet")
+    except FileNotFoundError:
+        return None
+
+    dataset["date"] = pd.to_datetime(dataset["date"])
+    top10["date"] = pd.to_datetime(top10["date"])
+
+    name_cols = [c for c in top10.columns if c.startswith("name_")]
+    merged = dataset.merge(
+        top10[["date"] + name_cols], on="date", how="left", validate="one_to_one"
+    )
+
+    # Interleave each slot's ticker with its value so the pairs read together.
+    ordered = ["date"]
+    for i in range(1, len(name_cols) + 1):
+        ordered += [f"name_{i}", f"x{i}"]
+    ordered += [c for c in merged.columns if c not in ordered]
+
+    return merged[ordered]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Write every table to one workbook")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
@@ -130,6 +168,21 @@ def main() -> int:
 
     loaded: dict[str, pd.DataFrame] = {}
     missing: list[str] = []
+    descriptions: dict[str, str] = {name: text for name, (_, text) in SHEETS.items()}
+    sources: dict[str, str] = {name: path.name for name, (path, _) in SHEETS.items()}
+
+    # The per-day view leads the workbook: it is the shape the models see.
+    daily = build_dataset_daily()
+    if daily is None:
+        missing.append("dataset_daily")
+        log.warning("Skipping dataset_daily: dataset.parquet has not been built")
+    else:
+        loaded["dataset_daily"] = daily
+        descriptions["dataset_daily"] = (
+            "One row per trading day: the 19 model features, the target, "
+            "and the ticker holding each rank slot"
+        )
+        sources["dataset_daily"] = "dataset.parquet + top10_daily.parquet"
 
     for name, (path, _) in SHEETS.items():
         try:
@@ -150,8 +203,8 @@ def main() -> int:
                 "sheet": name,
                 "rows": len(frame),
                 "columns": frame.shape[1],
-                "description": SHEETS[name][1],
-                "source": SHEETS[name][0].name,
+                "description": descriptions[name],
+                "source": sources[name],
             }
             for name, frame in loaded.items()
         ]
