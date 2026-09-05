@@ -14,6 +14,15 @@ data/interim/*
 data/processed/*
 !data/**/.gitkeep
 
+# Exception: the CSV exports from notebooks/02_modelling.ipynb. They are the
+# study's data in a form anyone can open without Python, they total under 3 MB,
+# and they are cited in the report -- the same reason reports/*.parquet is kept.
+# The parquet tables beside them stay ignored; mcap_daily.parquet alone is 10 MB
+# and is rebuilt by `python -m scripts.run_data`.
+!data/processed/top10_ranking_daily.csv
+!data/processed/close_prices_top10.csv
+!data/processed/index_close.csv
+
 # Trained models. AutoGluon writes a directory tree per fold.
 models/*
 !models/.gitkeep
