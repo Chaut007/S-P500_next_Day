@@ -34,6 +34,7 @@ data/processed/*
 !data/processed/top10_ranking_daily.csv
 !data/processed/close_prices_top10.csv
 !data/processed/index_close.csv
+!data/processed/modelling_table.csv
 
 # Trained models. AutoGluon writes a directory tree per fold.
 models/*

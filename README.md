@@ -376,7 +376,8 @@ config/config.yaml       every tunable value; nothing is hard-coded in src/
 data/raw/                cached downloads
 data/processed/          dataset, rankings, concentration -- what the app reads
 reports/                 metrics, predictions, importance
-reports/sp555_all_tables.xlsx   all 19 tables in one workbook
+reports/sp555_all_tables.xlsx        all 20 tables in one workbook
+data/processed/modelling_table.csv   every modelling input in one file
 app/static/logos/        company marks, served to the home-page leaderboard
 logs/                    rotating run logs
 ```
