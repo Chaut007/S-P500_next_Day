@@ -18,6 +18,7 @@ autogluon.tabular[lightgbm,catboost,xgboost]>=1.1
 xgboost>=2.0                  # also used standalone in the four-model comparison
 torch>=2.0                    # LSTM; the CPU wheel is enough
 shap>=0.45                    # TreeSHAP on the XGBoost model
+openpyxl>=3.1                 # writes the combined workbook
 
 # --- Config / utils ---
 PyYAML>=6.0

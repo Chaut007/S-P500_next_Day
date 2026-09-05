@@ -54,6 +54,7 @@ python -m scripts.run_experiments   # explanatory power and weight vs importance
 python -m scripts.run_tuning        # grid search SVR / XGBoost / LSTM
 python -m scripts.run_models        # four models on the 80/20 split + SHAP
 python -m scripts.run_models --tuned   # the same run using the tuned settings
+python -m scripts.export_workbook   # every table into one .xlsx
 pytest -q                           # leakage and alignment tests
 
 streamlit run app/Home.py           # dashboard
@@ -375,6 +376,7 @@ config/config.yaml       every tunable value; nothing is hard-coded in src/
 data/raw/                cached downloads
 data/processed/          dataset, rankings, concentration -- what the app reads
 reports/                 metrics, predictions, importance
+reports/sp555_all_tables.xlsx   all 19 tables in one workbook
 app/static/logos/        company marks, served to the home-page leaderboard
 logs/                    rotating run logs
 ```
