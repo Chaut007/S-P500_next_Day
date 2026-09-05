@@ -6,13 +6,25 @@ env/
 # Secrets
 .env
 
-# Downloaded and derived data.
-# Large and fully reproducible from `python -m scripts.run_data`.
-# mcap_daily.parquet alone is ~10 MB.
-data/raw/*
+# Derived data. Rebuilt from data/raw by `python -m scripts.run_data`, and
+# large: mcap_daily.parquet alone is ~10 MB.
 data/interim/*
 data/processed/*
 !data/**/.gitkeep
+
+# data/raw IS kept, and it is the one directory that has to be.
+#
+# Everything downstream is a deterministic function of it, but raw itself is
+# not reproducible: sp500_shares.csv is a *current* snapshot of shares
+# outstanding, and the constituent list is today's membership. Refetching in
+# six months returns different share counts, which changes every market cap,
+# which changes the daily ranking, which changes x1..x10 and therefore every
+# number in the report. Committing the cache is what pins the study to the
+# data it was actually run on.
+#
+# 8 MB total, of which constituent_prices.parquet is 8 MB. The .meta.json
+# sidecars record the request each file answered; without them the freshness
+# check in src/data/load.py treats the cache as stale and refetches over it.
 
 # Exception: the CSV exports from notebooks/02_modelling.ipynb. They are the
 # study's data in a form anyone can open without Python, they total under 3 MB,
